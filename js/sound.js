@@ -34,6 +34,7 @@ function noise(dur, vol, freq, when = 0) {
 }
 
 export const sfx = {
+  card: () => noise(0.05, 0.32, 2800),
   deal: () => { noise(0.05, 0.35, 2800); noise(0.05, 0.3, 2600, 0.07); },
   board: () => { noise(0.05, 0.3, 2800); },
   chip: () => { tone(2400, 0.05, 'triangle', 0.07); tone(3100, 0.06, 'triangle', 0.05, 0.035); tone(2700, 0.05, 'triangle', 0.04, 0.07); },

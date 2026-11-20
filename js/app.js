@@ -1,9 +1,11 @@
 import { Table } from './engine.js';
-import { evaluate, describeHole, rankOf, suitOf, RANK_CH, SUIT_CH, isRed } from './cards.js';
+import { evaluate, describeHole, rankOf, suitOf, RANK_CH, SUIT_CH, isRed, CATEGORY } from './cards.js';
+import { analyze, findOuts } from './odds.js';
 import { HostNet, ClientNet } from './net.js';
 import { sfx, unlockAudio, isSoundOn, setSound } from './sound.js';
 
 // ---------------------------------------------------------------- utils
+const reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -29,18 +31,20 @@ const S = {
   view: null, offset: 0, lastEvent: -1, seen: new Set(), seenHand: -1,
   raiseOpen: false, raiseTo: 0, pre: null, sentTurn: -1,
   unread: 0, lastLogLen: 0, reconnects: 0, leaving: false, wake: null, sheet: null,
+  odds: null, showOdds: localStorage.getItem('felt.odds') !== '0', prevBets: {}, prevHand: -1, paidHand: -1,
 };
 
 // ---------------------------------------------------------------- cards
-function cardHTML(c, cls = '') {
-  if (c == null) return `<div class="card back ${cls}"></div>`;
+function cardHTML(c, cls = '', at = '') {
+  if (c == null) return `<div class="card back ${cls}" ${at}></div>`;
   const r = RANK_CH[rankOf(c)], s = SUIT_CH[suitOf(c)];
-  return `<div class="card ${isRed(c) ? 'red' : ''} ${cls}" data-c="${c}"><span class="cr">${r}</span><span class="cs">${s}</span><span class="cc">${s}</span></div>`;
+  return `<div class="card ${isRed(c) ? 'red' : ''} ${cls}" ${at} data-c="${c}"><span class="cr">${r}</span><span class="cs">${s}</span><span class="cc">${s}</span></div>`;
 }
-function animCls(key) {
-  if (S.seen.has(key)) return '';
+// marks an element to be animated once (dealt from the deck, or flipped face-up)
+function fx(key, kind, ord) {
+  if (S.seen.has(key)) return { cls: '', at: '' };
   S.seen.add(key);
-  return 'deal-in';
+  return { cls: 'fx', at: `data-kind="${kind}" data-ord="${ord}"` };
 }
 
 // ---------------------------------------------------------------- toast & alert
@@ -78,6 +82,7 @@ function openSheet(id) {
   $('#' + id).classList.add('show');
   if (id === 'sheet-log') { S.unread = 0; renderBadge(); renderLog(); setTimeout(() => { const l = $('#log-list'); l.scrollTop = l.scrollHeight; }, 50); }
   if (id === 'sheet-menu') renderMenu();
+  if (id === 'sheet-odds') renderOdds();
 }
 function closeSheets(silent) {
   S.sheet = null;
@@ -121,7 +126,7 @@ $('#home').addEventListener('click', (e) => {
 });
 
 // ---------------------------------------------------------------- setup sheet
-const setup = { maxSeats: 6, bots: 5, blinds: '10/20', startStack: 2000, turnTime: 25, blindUp: 0, rebuy: true, mode: 'bots' };
+const setup = { maxSeats: 6, bots: 5, blinds: '10/20', startStack: 2000, turnTime: 25, blindUp: 0, rebuy: true, mode: 'bots', maxHands: 0, odds: true };
 function syncSetup() {
   const minBots = setup.mode === 'bots' ? 1 : 0;
   setup.bots = Math.max(minBots, Math.min(setup.bots, setup.maxSeats - 1));
@@ -165,12 +170,13 @@ $('#sheet-setup').addEventListener('click', (e) => {
 $('#sheet-setup').addEventListener('change', (e) => {
   const f = e.target.dataset.field;
   if (f === 'rebuy') setup.rebuy = e.target.checked;
+  else if (f === 'odds') setup.odds = e.target.checked;
   else if (f === 'blinds') setup.blinds = e.target.value;
   else if (f === 'startStack') setup.startStack = +e.target.value;
 });
 $('#setup-start').addEventListener('click', () => {
   const [sb, bb] = setup.blinds.split('/').map(Number);
-  const cfg = { maxSeats: setup.maxSeats, sb, bb, startStack: setup.startStack, turnTime: setup.turnTime, rebuy: setup.rebuy, blindUp: setup.blindUp };
+  const cfg = { maxSeats: setup.maxSeats, sb, bb, startStack: setup.startStack, turnTime: setup.turnTime, rebuy: setup.rebuy, blindUp: setup.blindUp, maxHands: setup.maxHands, odds: setup.odds };
   closeSheets();
   startLocal(cfg, setup.mode === 'host', setup.bots);
 });
@@ -382,9 +388,7 @@ function playEvents(v) {
   if (S.lastEvent < 0) { S.lastEvent = max; return; }
   for (const e of evs) {
     if (e.id <= S.lastEvent) continue;
-    if (e.type === 'deal') sfx.deal();
-    else if (e.type === 'board') sfx.board();
-    else if (e.type === 'chips') sfx.chip();
+    if (e.type === 'chips') sfx.chip();
     else if (e.type === 'check') sfx.check();
     else if (e.type === 'fold') sfx.fold();
     else if (e.type === 'win') sfx.win();
@@ -434,22 +438,69 @@ function seatPos(rel, n) {
   return { cos: Math.cos(a), sin: Math.sin(a) };
 }
 
+// ---------------------------------------------------------------- chips on the felt
+const CHIP_MULT = [1, 5, 25, 100, 500];
+const chipLabel = (d) => (d >= 1000 && d % 1000 === 0 ? d / 1000 + 'K' : String(d));
+function tablePile(amount, cfg, cols = 3, maxK = CHIP_MULT.length - 1) {
+  if (amount <= 0) return '';
+  let rem = amount;
+  const out = [];
+  for (let k = maxK; k >= 0; k--) {
+    const d = cfg.bb * CHIP_MULT[k];
+    const n = Math.floor(rem / d);
+    if (n > 0) { out.push({ k, n }); rem -= n * d; }
+  }
+  if (!out.length) out.push({ k: 0, n: 1 });
+  return `<span class="pile">${out.slice(0, cols).map((c) => {
+    const n = Math.min(c.n, 7);
+    return `<span class="col" style="--h:${n - 1}">${Array.from({ length: n }, (_, i) => `<i class="chip c${c.k + 1}" style="--i:${i}">${i === n - 1 ? `<b>${chipLabel(cfg.bb * CHIP_MULT[c.k])}</b>` : ''}</i>`).join('')}</span>`;
+  }).join('')}</span>`;
+}
+const rectCenter = (el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+function flyChips(from, to, n, k = 1, delay = 0) {
+  if (reduceMotion || !from || !to) return;
+  for (let i = 0; i < n; i++) {
+    const el = document.createElement('i');
+    el.className = 'chip fly c' + k;
+    el.style.left = from.x - 11 + 'px'; el.style.top = from.y - 11 + 'px';
+    document.body.appendChild(el);
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const jx = (Math.random() - 0.5) * 16, jy = (Math.random() - 0.5) * 10;
+    const a = el.animate([
+      { transform: 'translate(0,0) scale(1)', opacity: 1 },
+      { transform: `translate(${dx * 0.5 + jx}px, ${dy * 0.5 - 24 + jy}px) scale(1.2)`, opacity: 1, offset: 0.5 },
+      { transform: `translate(${dx + jx}px, ${dy + jy}px) scale(.85)`, opacity: 0.95 },
+    ], { duration: 520, delay: delay + i * 55, easing: 'cubic-bezier(.3,.7,.3,1)', fill: 'backwards' });
+    a.onfinish = () => el.remove();
+  }
+  setTimeout(() => sfx.chip(), delay + 380);
+}
+
 // ---------------------------------------------------------------- render
+let dealCtx = { idx: {}, m: 1 };
+
 function render() {
   const v = S.view;
   if (!v) return;
   const n = v.seats.length;
+  const cfg = v.config;
   const you = v.you >= 0 ? v.you : 0;
   const winners = new Set();
   if (v.results) v.results.pots.forEach((p) => p.winners.forEach((w) => winners.add(w)));
   const bestCards = new Set();
   if (v.results && !v.results.uncontested) v.results.pots[0].winners.forEach((w) => (v.seats[w]?.best || []).forEach((c) => bestCards.add(c)));
 
+  // deal order: clockwise starting left of the dealer
+  const idx = {};
+  let m = 0;
+  if (v.dealer >= 0) for (let k = 1; k <= n; k++) { const j = (v.dealer + k) % n; if (v.seats[j] && v.seats[j].inHand) idx[j] = m++; }
+  dealCtx = { idx, m: Math.max(1, m) };
+
   // top bar
   const pill = $('#room-pill');
   pill.hidden = !S.code;
   if (S.code) pill.innerHTML = `<svg viewBox="0 0 24 24"><path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7M12 3v12M7 8l5-5 5 5"/></svg>${S.code}`;
-  $('#table-info').textContent = `NLH · ${fmt(v.config.sb)}/${fmt(v.config.bb)}${v.handNo ? ` · Hand ${v.handNo}` : ''}`;
+  $('#table-info').textContent = `NLH · ${fmt(cfg.sb)}/${fmt(cfg.bb)}${v.handNo ? ` · Hand ${v.handNo}${cfg.maxHands ? '/' + cfg.maxHands : ''}` : ''}`;
 
   // seats
   let html = '';
@@ -470,13 +521,15 @@ function render() {
     }
     const me = i === v.you;
     const active = i === v.toAct;
-    const out = p.folded || !p.inHand;
     const won = winners.has(i) && v.street === 'showdown';
     const cls = ['seat', cos > 0.3 && 'right', me && 'me', active && 'active', p.folded && 'folded', !p.inHand && 'waiting', won && 'winner', !p.connected && 'offline', p.allIn && 'allin'].filter(Boolean).join(' ');
     let cards = '';
     if (!me && p.inHand && !p.folded) {
-      if (p.cards) cards = `<div class="seat-cards face">${p.cards.map((c, k) => cardHTML(c, `sm ${bestCards.size && !bestCards.has(c) ? 'dim' : ''} ${animCls(`s${i}-${k}-f`)}`)).join('')}</div>`;
-      else cards = `<div class="seat-cards">${cardHTML(null, 'sm ' + animCls(`s${i}-0`))}${cardHTML(null, 'sm ' + animCls(`s${i}-1`))}</div>`;
+      if (p.cards) {
+        cards = `<div class="seat-cards face">${p.cards.map((c, k) => { const f = fx(`s${i}-${k}-f`, 'flip', k); return cardHTML(c, `sm ${bestCards.size && !bestCards.has(c) ? 'dim' : ''} ${f.cls}`, f.at); }).join('')}</div>`;
+      } else {
+        cards = `<div class="seat-cards">${[0, 1].map((k) => { const f = fx(`s${i}-${k}`, 'deal', k * dealCtx.m + (dealCtx.idx[i] ?? 0)); return cardHTML(null, 'sm ' + f.cls, f.at); }).join('')}</div>`;
+      }
     }
     let tag = '';
     if (won) tag = `<div class="tag win">+${fmt(p.won)}</div>`;
@@ -491,18 +544,22 @@ function render() {
         <span>${p.isBot ? '<svg class="bot-ic" viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 4v4M9 13h0M15 13h0"/></svg>' : esc(initials(p.name))}</span>
         ${!p.connected ? '<i class="offline-dot"></i>' : ''}
       </div>
-      <div class="plate"><div class="pname">${esc(p.name)}</div><div class="pstack">${p.allIn && p.inHand && !p.folded ? 'ALL IN' : fmt(p.stack)}</div></div>
+      <div class="plate"><div class="pname">${esc(p.name)}</div><div class="pstack">${p.allIn && p.inHand && !p.folded ? 'ALL IN' : `<i class="coin"></i>${fmt(p.stack)}`}</div></div>
+      ${p.stack > 0 ? `<div class="spile">${tablePile(p.stack, cfg, 3, 2)}</div>` : ''}
       ${tag}${handTag}
     </div>`;
-    // bet chips
     if (p.bet > 0) {
       const bx = 50 + rx * 0.58 * cos, by = 50 + ry * 0.56 * sin;
-      html += `<div class="bet" style="left:${bx}%;top:${by}%"><i class="chip c${chipColor(p.bet, v.config.bb)}"></i>${fmt(p.bet)}</div>`;
+      html += `<div class="bet" data-seat="${i}" data-amt="${p.bet}" data-k="${chipColor(p.bet, cfg.bb)}" style="left:${bx}%;top:${by}%"><span class="bet-amt">${fmt(p.bet)}</span>${tablePile(p.bet, cfg, 3)}</div>`;
     }
     if (i === v.dealer && v.handNo) {
-      const a = Math.atan2(sin, cos) + (geo.landscape ? 0.32 : 0.42);
+      const base = Math.atan2(sin, cos);
+      const a = base + (geo.landscape ? 0.32 : 0.42);
       const dx = 50 + rx * 0.74 * Math.cos(a), dy = 50 + ry * 0.74 * Math.sin(a);
       html += `<div class="dealer" style="left:${dx}%;top:${dy}%">D</div>`;
+      const a2 = base - (geo.landscape ? 0.3 : 0.4);
+      const kx = 50 + rx * 0.76 * Math.cos(a2), ky = 50 + ry * 0.76 * Math.sin(a2);
+      html += `<div class="deckpile" id="deckpile" style="left:${kx}%;top:${ky}%"><i class="card back"></i><i class="card back"></i><i class="card back"></i><i class="card back"></i></div>`;
     }
   }
   $('#seats').innerHTML = html;
@@ -511,24 +568,78 @@ function render() {
   let b = '';
   for (let k = 0; k < 5; k++) {
     const c = v.board[k];
-    b += c == null ? '<div class="card slot"></div>' : cardHTML(c, `${bestCards.size && !bestCards.has(c) ? 'dim' : ''} ${bestCards.has(c) ? 'hl' : ''} ${animCls('b' + k)}`);
+    if (c == null) { b += '<div class="card slot"></div>'; continue; }
+    const f = fx('b' + k, 'board', k < 3 ? k : 0);
+    b += cardHTML(c, `${bestCards.size && !bestCards.has(c) ? 'dim' : ''} ${bestCards.has(c) ? 'hl' : ''} ${f.cls}`, f.at);
   }
   $('#board').innerHTML = b;
 
-  // pot
+  // pot (chips already collected from earlier streets)
   const bets = v.seats.reduce((s, p) => s + (p ? p.bet : 0), 0);
   const collected = v.pot - bets;
   const potShown = collected > 0 ? collected : v.pot;
   $('#pot').innerHTML = v.pot > 0
-    ? `<span class="pot-main"><i class="chip c${chipColor(potShown, v.config.bb)}"></i>${collected > 0 ? '' : '<small>Pot</small>'}${fmt(potShown)}</span>${bets && collected ? `<span class="pot-total">Total ${fmt(v.pot)}</span>` : ''}`
+    ? `<div class="pot-row"><span class="pot-main">${collected > 0 ? '' : '<small>Pot</small>'}${fmt(potShown)}</span>${tablePile(collected, cfg, 5)}</div>${bets && collected > 0 ? `<span class="pot-total">Total ${fmt(v.pot)}</span>` : ''}`
     : '';
-  $('#pot').classList.toggle('hidden', v.pot <= 0 || (v.street === 'showdown' && v.results));
+  $('#pot').classList.toggle('hidden', v.pot <= 0 || (v.street === 'showdown' && !!v.results));
 
-  // status
+  // chips sweep into the pot at the end of a street, then pay out to the winners
+  const potC = rectCenter($('#pot'));
+  if (S.prevHand === v.handNo) {
+    let k = 0;
+    for (const i in S.prevBets) {
+      const pb = S.prevBets[i], cur = v.seats[i];
+      if (cur && cur.bet === 0 && pb.amt > 0) { flyChips(pb, potC, Math.min(6, Math.max(2, Math.round(pb.amt / cfg.bb))), pb.k, k * 40); k++; }
+    }
+  }
+  if (v.street === 'showdown' && v.results && S.paidHand !== v.handNo) {
+    S.paidHand = v.handNo;
+    v.results.pots.forEach((pot) => pot.winners.forEach((w, wi) => {
+      const av = $(`.seat[data-seat="${w}"] .avatar`);
+      if (av) flyChips(potC, rectCenter(av), Math.min(10, Math.max(3, Math.round(pot.amount / cfg.bb / pot.winners.length))), 3, 450 + wi * 90);
+    }));
+  }
+  S.prevBets = {};
+  $$('#seats .bet').forEach((el) => { const c = rectCenter(el); S.prevBets[el.dataset.seat] = { x: c.x, y: c.y, amt: +el.dataset.amt, k: +el.dataset.k }; });
+  S.prevHand = v.handNo;
+
   $('#status').innerHTML = statusText(v);
-
   renderHero(v, bestCards);
   renderActions(v);
+  animateDeals();
+  refreshOdds();
+  paintOdds();
+  renderOver(v);
+}
+
+// cards fly out of the dealer's deck one at a time; shown cards flip face-up
+function animateDeals() {
+  const els = $$('.fx');
+  if (!els.length) return;
+  const v = S.view;
+  const deck = $('#deckpile');
+  const src = deck || (v.dealer >= 0 && $(`.seat[data-seat="${v.dealer}"] .avatar`)) || $('#center');
+  const o = rectCenter(src);
+  for (const el of els) {
+    el.classList.remove('fx');
+    if (reduceMotion) continue;
+    const kind = el.dataset.kind, ord = +el.dataset.ord || 0;
+    if (kind === 'flip') {
+      el.animate([{ transform: 'scaleX(.05)', opacity: 0.4 }], { duration: 340, delay: ord * 140, easing: 'ease-out', fill: 'backwards' });
+      continue;
+    }
+    const r = el.getBoundingClientRect();
+    const dx = o.x - (r.left + r.width / 2), dy = o.y - (r.top + r.height / 2);
+    const delay = kind === 'board' ? ord * 130 : ord * 80;
+    el.animate([
+      { transform: `translate(${dx}px, ${dy}px) scale(.4) rotate(${(Math.random() * 60 - 30).toFixed(0)}deg)`, opacity: 0 },
+      { opacity: 1, offset: 0.2 },
+    ], { duration: 460, delay, easing: 'cubic-bezier(.2,.8,.3,1)', fill: 'backwards' });
+    setTimeout(() => {
+      sfx.card();
+      if (deck) deck.animate([{ transform: 'translate(-50%,-50%) translate(0,0) rotate(0)' }, { transform: 'translate(-50%,-50%) translate(3px,-3px) rotate(3deg)' }, { transform: 'translate(-50%,-50%) translate(0,0) rotate(0)' }], { duration: 160 });
+    }, delay + 30);
+  }
 }
 
 function chipColor(amt, bb) {
@@ -562,12 +673,34 @@ function renderHero(v, bestCards) {
   const hc = $('#hero-cards'), hn = $('#hero-hand');
   if (!p || !p.cards || !p.cards.length) { hc.innerHTML = ''; hn.textContent = ''; $('#hero').classList.add('empty'); return; }
   $('#hero').classList.remove('empty');
-  hc.innerHTML = p.cards.map((c, k) => cardHTML(c, `lg ${p.folded ? 'dim' : ''} ${bestCards.size && !bestCards.has(c) ? 'dim' : ''} ${bestCards.has(c) ? 'hl' : ''} ${animCls('h' + k)}`)).join('');
+  hc.innerHTML = p.cards.map((c, k) => {
+    const f = fx('h' + k, 'deal', k * dealCtx.m + (dealCtx.idx[v.you] ?? 0));
+    return cardHTML(c, `lg ${p.folded ? 'dim' : ''} ${bestCards.size && !bestCards.has(c) ? 'dim' : ''} ${bestCards.has(c) ? 'hl' : ''} ${f.cls}`, f.at);
+  }).join('');
   let label = '';
   if (p.handName) label = p.handName;
   else if (v.board.length >= 3) label = evaluate([...p.cards, ...v.board]).name;
   else label = describeHole(p.cards);
   hn.innerHTML = p.folded ? '<span class="muted">Folded</span>' : esc(label);
+}
+
+const clampTo = (x, l) => Math.max(l.minTo, Math.min(l.maxTo, x));
+function denoms(cfg, maxTo) {
+  const out = [];
+  for (const m of CHIP_MULT) { const d = cfg.bb * m; if (d <= maxTo) out.push(d); }
+  return out;
+}
+function pileHTML(amount, ds) {
+  let rem = amount, h = '';
+  for (let k = ds.length - 1; k >= 0; k--) {
+    const d = ds[k], n = Math.floor(rem / d);
+    if (!n) continue;
+    rem -= n * d;
+    const shown = Math.min(n, 6);
+    h += `<button class="stack" data-d="${d}" aria-label="Remove a ${fmt(d)} chip"><span class="stack-chips">${Array.from({ length: shown }, (_, i) => `<i class="chip c${k + 1}" style="--i:${i}">${i === shown - 1 ? `<b>${chipLabel(d)}</b>` : ''}</i>`).join('')}</span>${n > 1 ? `<b>${n}</b>` : ''}</button>`;
+  }
+  if (rem > 0) h += `<span class="loose">+${fmt(rem)}</span>`;
+  return h;
 }
 
 function renderActions(v) {
@@ -578,14 +711,16 @@ function renderActions(v) {
   const pending = l && S.sentTurn === v.turnId;
   let html = '';
 
-  if (S.mode === 'host' && !v.running) {
+  if (v.over) {
+    html = '<div class="idle-msg">Game over</div>';
+  } else if (S.mode === 'host' && !v.running) {
     const seated = v.seats.filter(Boolean).length;
     html = `<button class="btn btn-gray" data-act="invite">Invite</button><button class="btn btn-filled grow" data-act="start" ${seated < 2 ? 'disabled' : ''}>${seated < 2 ? 'Need 2+ players' : 'Start Game'}</button>`;
   } else if (l) {
     if (S.raiseOpen && l.canRaise) {
       html = `<button class="btn btn-gray" data-act="cancel">Cancel</button>
         <button class="btn btn-call" data-act="${l.canCheck ? 'check' : 'call'}" ${pending ? 'disabled' : ''}>${l.canCheck ? 'Check' : 'Call ' + fmt(l.toCall)}</button>
-        <button class="btn btn-raise grow" data-act="confirm" ${pending ? 'disabled' : ''}>${S.raiseTo >= l.maxTo ? 'All-in ' + fmt(l.maxTo) : (l.isBet ? 'Bet ' : 'Raise to ') + fmt(S.raiseTo)}</button>`;
+        <button class="btn btn-raise grow" data-act="confirm" ${pending ? 'disabled' : ''}></button>`;
     } else {
       const allinCall = !l.canCheck && l.toCall >= p.stack;
       html = `<button class="btn btn-fold" data-act="fold" ${pending ? 'disabled' : ''}>Fold</button>
@@ -610,34 +745,94 @@ function renderActions(v) {
     html = '<div class="idle-msg"></div>';
   }
   el.innerHTML = html;
-
-  // timer bar on my turn
   el.classList.toggle('my-turn', !!l);
 
-  // raise panel
-  if (l && S.raiseOpen && l.canRaise) {
+  const raising = !!(l && S.raiseOpen && l.canRaise);
+  $('#dock').classList.toggle('raising', raising);
+  if (raising) {
     rp.hidden = false;
-    const slider = $('#raise-slider');
-    slider.min = l.minTo; slider.max = l.maxTo; slider.step = v.config.sb;
-    S.raiseTo = Math.max(l.minTo, Math.min(l.maxTo, S.raiseTo || l.minTo));
-    slider.value = S.raiseTo;
-    updateSliderFill();
+    S.raiseTo = clampTo(S.raiseTo || l.minTo, l);
+    const ds = denoms(v.config, l.maxTo);
+    const rack = $('#chip-rack');
+    const key = ds.join(',');
+    if (rack.dataset.key !== key) {
+      rack.dataset.key = key;
+      rack.innerHTML = ds.map((d, k) => `<button class="chip-btn c${k + 1}" data-d="${d}" aria-label="Add ${fmt(d)}"><span>${fmt(d)}</span></button>`).join('');
+    }
     $('#raise-label').textContent = l.isBet ? 'Bet' : 'Raise to';
-    $('#raise-value').textContent = fmt(S.raiseTo);
-    const potAfterCall = l.pot + l.toCall;
-    const presets = [['Min', l.minTo], ['½ Pot', l.currentBet + Math.round(potAfterCall / 2)], ['¾ Pot', l.currentBet + Math.round(potAfterCall * 0.75)], ['Pot', l.currentBet + potAfterCall]];
+    const sb = v.config.sb, pa = l.pot + l.toCall;
+    const snap = (x) => clampTo(Math.round(x / sb) * sb, l);
+    const opts = [['Min', l.minTo], ['½ Pot', snap(l.currentBet + pa * 0.5)], ['¾ Pot', snap(l.currentBet + pa * 0.75)], ['Pot', snap(l.currentBet + pa)]];
+    const seenV = new Set();
     let ph = '';
-    for (const [name, val] of presets) if (val > l.minTo && val < l.maxTo || name === 'Min') ph += `<button data-to="${val}" class="${S.raiseTo === val ? 'on' : ''}">${name}</button>`;
-    ph += `<button data-to="${l.maxTo}" class="allin ${S.raiseTo === l.maxTo ? 'on' : ''}">All-in</button>`;
+    for (const [name, val] of opts) {
+      if (seenV.has(val) || (name !== 'Min' && (val <= l.minTo || val >= l.maxTo))) continue;
+      seenV.add(val);
+      ph += `<button data-to="${val}">${name}</button>`;
+    }
+    ph += `<button data-to="${l.maxTo}" class="allin">All-in</button>`;
     $('#presets').innerHTML = ph;
-  } else rp.hidden = true;
+    updateRaiseUI();
+  } else {
+    rp.hidden = true;
+    $('#chip-rack').dataset.key = '';
+  }
 }
 
-function updateSliderFill() {
-  const s = $('#raise-slider');
-  const pct = ((s.value - s.min) / (s.max - s.min || 1)) * 100;
-  s.style.setProperty('--pct', pct + '%');
+function updateRaiseUI() {
+  const v = S.view, l = v && v.legal;
+  if (!l || !S.raiseOpen) return;
+  S.raiseTo = clampTo(S.raiseTo || l.minTo, l);
+  const atMax = S.raiseTo >= l.maxTo;
+  $('#raise-value').textContent = fmt(S.raiseTo);
+  $('#bet-pile').innerHTML = pileHTML(S.raiseTo, denoms(v.config, l.maxTo));
+  $$('#chip-rack .chip-btn').forEach((b) => { b.disabled = atMax; });
+  $$('#presets button').forEach((b) => b.classList.toggle('on', +b.dataset.to === S.raiseTo));
+  $('#raise-clear').disabled = S.raiseTo <= l.minTo;
+  const btn = $('#actions [data-act="confirm"]');
+  if (btn) btn.textContent = atMax ? 'All-in ' + fmt(l.maxTo) : (l.isBet ? 'Bet ' : 'Raise to ') + fmt(S.raiseTo);
 }
+
+function flyChipFrom(btn) {
+  if (reduceMotion) return;
+  const to = $('#bet-pile');
+  if (!to) return;
+  flyChips(rectCenter(btn), rectCenter(to), 1, +(btn.className.match(/c(\d)/) || [0, 1])[1], 0);
+}
+function addChip(btn) {
+  const l = S.view?.legal;
+  if (!l || !S.raiseOpen || S.raiseTo >= l.maxTo) return false;
+  S.raiseTo = clampTo(S.raiseTo + +btn.dataset.d, l);
+  navigator.vibrate?.(8);
+  flyChipFrom(btn);
+  updateRaiseUI();
+  return true;
+}
+let holdT, holdI;
+const stopHold = () => { clearTimeout(holdT); clearInterval(holdI); };
+$('#chip-rack').addEventListener('pointerdown', (e) => {
+  const b = e.target.closest('.chip-btn');
+  if (!b || b.disabled) return;
+  e.preventDefault();
+  addChip(b);
+  stopHold();
+  holdT = setTimeout(() => { holdI = setInterval(() => { if (!addChip(b)) stopHold(); }, 130); }, 380);
+});
+$('#chip-rack').addEventListener('click', (e) => { const b = e.target.closest('.chip-btn'); if (b && !b.disabled && e.detail === 0) addChip(b); });
+['pointerup', 'pointercancel'].forEach((t) => window.addEventListener(t, stopHold));
+$('#bet-pile').addEventListener('click', (e) => {
+  const st = e.target.closest('.stack');
+  const l = S.view?.legal;
+  if (!st || !l) return;
+  S.raiseTo = clampTo(S.raiseTo - +st.dataset.d, l);
+  sfx.tap(); updateRaiseUI();
+});
+$('#raise-clear').addEventListener('click', () => { const l = S.view?.legal; if (!l) return; S.raiseTo = l.minTo; sfx.tap(); updateRaiseUI(); });
+$('#presets').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-to]');
+  if (!b) return;
+  S.raiseTo = +b.dataset.to; sfx.chip(); updateRaiseUI();
+});
 
 $('#actions').addEventListener('click', (e) => {
   const pre = e.target.closest('[data-pre]');
@@ -658,36 +853,6 @@ $('#actions').addEventListener('click', (e) => {
     case 'seat': api.seat(); break;
   }
 });
-$('#raise-slider').addEventListener('input', (e) => {
-  S.raiseTo = +e.target.value;
-  const l = S.view?.legal;
-  if (l && S.raiseTo > l.maxTo - +e.target.step) S.raiseTo = l.maxTo;
-  $('#raise-value').textContent = fmt(S.raiseTo);
-  updateSliderFill();
-  renderActionsOnly();
-});
-function renderActionsOnly() {
-  const btn = $('#actions [data-act="confirm"]');
-  const l = S.view?.legal;
-  if (btn && l) btn.textContent = S.raiseTo >= l.maxTo ? 'All-in ' + fmt(l.maxTo) : (l.isBet ? 'Bet ' : 'Raise to ') + fmt(S.raiseTo);
-  $$('#presets button').forEach((b) => b.classList.toggle('on', +b.dataset.to === S.raiseTo));
-}
-$('#presets').addEventListener('click', (e) => {
-  const b = e.target.closest('[data-to]');
-  if (!b) return;
-  S.raiseTo = +b.dataset.to; sfx.tap();
-  $('#raise-slider').value = S.raiseTo; updateSliderFill();
-  $('#raise-value').textContent = fmt(S.raiseTo);
-  renderActionsOnly();
-});
-$$('.raise-top .step').forEach((b) => b.addEventListener('click', () => {
-  const l = S.view?.legal; if (!l) return;
-  const step = S.view.config.bb * +b.dataset.step;
-  S.raiseTo = Math.max(l.minTo, Math.min(l.maxTo, S.raiseTo + step));
-  $('#raise-slider').value = S.raiseTo; updateSliderFill();
-  $('#raise-value').textContent = fmt(S.raiseTo);
-  renderActionsOnly(); sfx.tap();
-}));
 
 // tap empty seat: add bot (host/local) or sit (spectator)
 $('#seats').addEventListener('click', (e) => {
@@ -749,6 +914,10 @@ function renderMenu() {
   if (p) h += `<div class="row"><span class="row-icon green">◐</span><span class="row-label">Sit Out Next Hand</span><label class="switch"><input type="checkbox" data-m="sitout" ${p.sittingOut ? 'checked' : ''}/><span></span></label></div>`;
   if (p && p.stack === 0 && v.config.rebuy) h += `<button class="row btn-row" data-m="rebuy"><span class="row-icon orange">＋</span><span class="row-label">Rebuy ${fmt(v.config.startStack)}</span></button>`;
   h += `<div class="row"><span class="row-icon pink">♪</span><span class="row-label">Sound</span><label class="switch"><input type="checkbox" data-m="sound" ${isSoundOn() ? 'checked' : ''}/><span></span></label></div>`;
+  if (v && v.config.odds && p) {
+    h += `<button class="row btn-row" data-m="odds"><span class="row-icon blue">%</span><span class="row-label">Odds &amp; Deck</span><span class="chev">›</span></button>`;
+    h += `<div class="row"><span class="row-icon green">◔</span><span class="row-label">Show Odds on Table</span><label class="switch"><input type="checkbox" data-m="showodds" ${S.showOdds ? 'checked' : ''}/><span></span></label></div>`;
+  }
   h += `<button class="row btn-row" data-m="rankings"><span class="row-icon purple">♠</span><span class="row-label">Hand Rankings</span><span class="chev">›</span></button>`;
   h += '</div>';
   if (isHost) {
@@ -769,6 +938,7 @@ $('#menu-body').addEventListener('click', (e) => {
   if (m === 'invite') shareInvite(false);
   if (m === 'rebuy') { api.rebuy(); closeSheets(); }
   if (m === 'rankings') { renderRankings(); openSheet('sheet-rankings'); }
+  if (m === 'odds') openSheet('sheet-odds');
   if (m === 'start') { S.table.start(); closeSheets(); }
   if (m === 'addbot') { addBot(S.table); renderMenu(); }
   if (m === 'rmbot') { const bot = [...S.table.seats].reverse().find((s) => s && s.isBot); if (bot) S.table.removePlayer(bot.id); renderMenu(); }
@@ -778,6 +948,7 @@ $('#menu-body').addEventListener('change', (e) => {
   const m = e.target.dataset.m;
   if (m === 'sound') { setSound(e.target.checked); if (e.target.checked) { unlockAudio(); sfx.chip(); } }
   if (m === 'sitout') api.sit(e.target.checked);
+  if (m === 'showodds') { S.showOdds = e.target.checked; localStorage.setItem('felt.odds', S.showOdds ? '1' : '0'); S.odds = null; refreshOdds(); paintOdds(); }
 });
 $('#btn-menu').addEventListener('click', () => openSheet('sheet-menu'));
 $('#btn-log').addEventListener('click', () => openSheet('sheet-log'));
@@ -821,6 +992,119 @@ function renderRankings() {
     <div class="rank-row"><div class="rank-n">${i + 1}</div><div class="rank-txt"><b>${n}</b><span>${d}</span></div>
     <div class="rank-cards">${cs.split(' ').map((c) => cardHTML(C(c), 'xs')).join('')}</div></div>`).join('') + '</div>';
 }
+
+// ---------------------------------------------------------------- odds & deck tracker
+const pct = (x) => (x > 0 && x < 0.005 ? '<1%' : Math.round(x * 100) + '%');
+function oddsState(force) {
+  const v = S.view;
+  if (!v || !v.config.odds || (!S.showOdds && !force)) return null;
+  const p = v.you >= 0 ? v.seats[v.you] : null;
+  if (!p || !p.cards || p.cards.length < 2 || !p.inHand || p.folded) return null;
+  if (['showdown', 'idle', 'over'].includes(v.street)) return null;
+  const opps = v.seats.filter((q, i) => q && i !== v.you && q.inHand && !q.folded).length;
+  if (opps < 1) return null;
+  return { key: `${p.cards.join()}|${v.board.join()}|${opps}`, p, opps };
+}
+let oddsTimer;
+function refreshOdds(force) {
+  const st = oddsState(force);
+  if (!st) { if (!force) S.odds = null; return; }
+  if (S.odds && S.odds.key === st.key) return;
+  clearTimeout(oddsTimer);
+  const run = () => {
+    const cur = oddsState(force);
+    if (!cur || cur.key !== st.key) return;
+    const board = S.view.board;
+    const r = analyze(cur.p.cards, board, cur.opps, 1600);
+    r.key = st.key; r.outs = findOuts(cur.p.cards, board);
+    S.odds = r;
+    paintOdds();
+    if (S.sheet === 'sheet-odds') renderOdds();
+  };
+  if (force) run(); else oddsTimer = setTimeout(run, 60);
+}
+function paintOdds() {
+  const el = $('#odds-line');
+  const st = oddsState();
+  if (!st) { el.hidden = true; return; }
+  el.hidden = false;
+  const o = S.odds;
+  if (!o) { el.innerHTML = '<span class="odds-sub">Calculating odds…</span>'; return; }
+  const v = S.view, l = v.legal;
+  el.classList.toggle('stale', o.key !== st.key);
+  const col = o.equity >= 0.5 ? 'var(--green)' : o.equity >= 0.3 ? 'var(--yellow)' : 'var(--red)';
+  let need = '';
+  if (l && l.toCall > 0) { const nd = l.toCall / (v.pot + l.toCall); need = `<span class="odds-need ${o.equity >= nd ? 'good' : 'bad'}">needs ${pct(nd)}</span>`; }
+  el.innerHTML = `<span class="odds-bar"><i style="width:${Math.round(o.equity * 100)}%;background:${col}"></i></span><b>${pct(o.equity)}</b><span class="odds-sub">to win</span>${need}`;
+}
+$('#odds-line').addEventListener('click', () => openSheet('sheet-odds'));
+
+function renderOdds() {
+  const v = S.view;
+  if (!v) return;
+  const you = v.you >= 0 ? v.seats[v.you] : null;
+  const mine = new Set((you && you.cards) || []), board = new Set(v.board), shown = new Set();
+  v.seats.forEach((q, i) => { if (q && i !== v.you && q.cards) q.cards.forEach((c) => shown.add(c)); });
+  const unseen = 52 - mine.size - board.size - shown.size;
+  const st = oddsState(true);
+  let h = '', outs = new Set();
+  if (!v.config.odds) h += '<p class="footnote center">The host turned the odds helper off for this table.</p>';
+  else if (!st) h += `<p class="footnote center">${you && you.folded ? 'You folded this hand.' : 'Your odds show up once you’re dealt in and there’s an opponent to beat.'}</p>`;
+  else {
+    if (!S.odds || S.odds.key !== st.key) refreshOdds(true);
+    const o = S.odds;
+    if (o && o.key === st.key) {
+      h += oddsBlocks(o, st, v);
+      if (o.outs) outs = new Set(o.outs.list);
+    }
+  }
+  let g = '';
+  for (const s of [0, 1, 2, 3]) for (let r = 14; r >= 2; r--) {
+    const c = (r - 2) * 4 + s;
+    const cls = mine.has(c) ? 'mine' : board.has(c) ? 'board' : shown.has(c) ? 'shown' : outs.has(c) ? 'out' : '';
+    g += `<i class="dk ${cls} ${isRed(c) ? 'red' : ''}"><b>${RANK_CH[r]}</b>${SUIT_CH[s]}</i>`;
+  }
+  h += `<div class="group-title">The deck · ${unseen} unseen</div><div class="odds-card"><div class="deck-grid">${g}</div>
+    <div class="deck-legend"><span><i class="sw mine"></i>Yours</span><span><i class="sw board"></i>Board</span><span><i class="sw shown"></i>Shown</span>${outs.size ? '<span><i class="sw out"></i>Outs</span>' : ''}<span><i class="sw"></i>Unseen</span></div></div>
+    <p class="footnote">Every hand starts with a fresh shuffle of all 52 cards (Fisher–Yates, driven by the secure random generator on the host’s device), so each unseen card is equally likely to be anywhere. Chances are estimated from 1,600 simulated runouts against random opponent hands.</p>`;
+  $('#odds-body').innerHTML = h;
+}
+function oddsBlocks(o, st, v) {
+  const l = v.legal;
+  const cur = v.board.length >= 3 ? evaluate([...st.p.cards, ...v.board]).cat : -1;
+  let h = `<div class="group-title">Your chances · vs ${o.opps} opponent${o.opps > 1 ? 's' : ''}</div><div class="odds-card">
+    <div class="stackbar"><i class="w" style="width:${o.win * 100}%"></i><i class="t" style="width:${o.tie * 100}%"></i><i class="l" style="width:${o.lose * 100}%"></i></div>
+    <div class="legend"><span><b>${pct(o.win)}</b>Win</span><span><b>${pct(o.tie)}</b>Split</span><span><b>${pct(o.lose)}</b>Lose</span></div></div>`;
+  if (l && l.toCall > 0) {
+    const nd = l.toCall / (v.pot + l.toCall);
+    const ok = o.equity >= nd;
+    h += `<div class="group-title">Pot odds</div><div class="odds-card"><div class="pot-odds">Call <b>${fmt(l.toCall)}</b> to win <b>${fmt(v.pot)}</b>. You need <b>${pct(nd)}</b> to break even and have <b>${pct(o.equity)}</b>.</div><div class="verdict ${ok ? 'good' : 'bad'}">${ok ? 'Calling is profitable on the odds' : 'The odds don’t justify a call'}</div></div>`;
+  }
+  if (o.outs) {
+    const ou = o.outs;
+    h += `<div class="group-title">Outs</div><div class="odds-card"><div class="pot-odds"><b>${ou.count}</b> of ${ou.unseen} unseen cards improve your hand — ${ou.cards === 3 ? `${pct(ou.next)} on the turn, ${pct(ou.river)} by the river` : `${pct(ou.next)} on the river`}.</div></div>`;
+  }
+  const rows = o.cats.map((p, c) => ({ c, p })).filter((r) => r.p >= 0.005).reverse();
+  h += `<div class="group-title">How your hand finishes</div><div class="odds-card">${rows.map((r) => `<div class="cat-row ${r.c === cur ? 'cur' : ''}"><span>${CATEGORY[r.c]}</span><span class="bar"><i style="width:${Math.max(2, r.p * 100)}%"></i></span><b>${pct(r.p)}</b></div>`).join('')}</div>`;
+  return h;
+}
+
+// ---------------------------------------------------------------- game over
+function renderOver(v) {
+  const el = $('#over');
+  if (!v.over) { el.hidden = true; return; }
+  const st = v.over.standings;
+  $('#over-body').innerHTML = `<div class="trophy">🏆</div><h2>${esc(st[0].name)} wins</h2><p>${fmt(st[0].stack)} chips after ${v.over.hands} hand${v.over.hands === 1 ? '' : 's'}</p>
+    <div class="group">${st.map((x, i) => `<div class="row"><span class="rank-n">${i + 1}</span><span class="row-label">${esc(x.name)}</span><span class="row-value">${fmt(x.stack)}</span></div>`).join('')}</div>`;
+  $('#over-actions').innerHTML = (S.mode !== 'client' ? '<button class="btn btn-filled btn-lg" data-over="rematch">Rematch</button>' : '<div class="idle-msg">Waiting for the host…</div>') + '<button class="btn btn-gray btn-lg" data-over="leave">Leave Table</button>';
+  el.hidden = false;
+}
+$('#over').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-over]');
+  if (!b) return;
+  if (b.dataset.over === 'rematch' && S.table) { S.seen = new Set(); S.table.rematch(); }
+  if (b.dataset.over === 'leave') leaveTable(false);
+});
 
 // ---------------------------------------------------------------- wake lock & lifecycle
 async function requestWake() {

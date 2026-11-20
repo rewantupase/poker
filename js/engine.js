@@ -2,7 +2,7 @@
 import { newDeck, shuffle, evaluate, bestFive, cardText } from './cards.js';
 import { botDecide } from './bot.js';
 
-export const DEFAULTS = { maxSeats: 6, sb: 10, bb: 20, startStack: 2000, turnTime: 25, rebuy: true, blindUp: 0 };
+export const DEFAULTS = { maxSeats: 6, sb: 10, bb: 20, startStack: 2000, turnTime: 25, rebuy: true, blindUp: 0, odds: true, maxHands: 0 };
 const BETTING = ['preflop', 'flop', 'turn', 'river'];
 const NEXT = { preflop: 'flop', flop: 'turn', turn: 'river' };
 const fmt = (n) => n.toLocaleString('en-US');
@@ -21,6 +21,7 @@ export class Table {
     this.results = null; this.toAct = -1; this.turnId = 0; this.running = false;
     this.currentBet = 0; this.minRaise = this.config.bb; this.deadline = null;
     this.sbSeat = -1; this.bbSeat = -1; this.pendingStart = false;
+    this.over = null; this.base = { sb: this.config.sb, bb: this.config.bb };
   }
 
   // ---------- helpers ----------
@@ -83,7 +84,7 @@ export class Table {
     if (i < 0) return;
     const p = this.seats[i];
     this.addLog(`${p.name} left the table`);
-    if (p.inHand && this.street !== 'idle' && this.street !== 'showdown') {
+    if (p.inHand && this.street !== 'idle' && this.street !== 'showdown' && this.street !== 'over') {
       p.leaving = true;
       if (this.canAct(p)) {
         if (this.toAct === i) { this.act(id, 'fold'); return; }
@@ -171,6 +172,10 @@ export class Table {
     });
     this.results = null; this.board = [];
     const el = this.eligible();
+    const withChips = this.seats.filter((q) => q && q.stack > 0).length;
+    if (this.running && this.handNo > 0 && ((this.config.maxHands > 0 && this.handNo >= this.config.maxHands) || (!this.config.rebuy && withChips < 2))) {
+      this.endGame(); return;
+    }
     if (!this.running || el.length < 2) {
       this.street = 'idle'; this.toAct = -1; this.deadline = null; this.emit(); return;
     }
@@ -198,7 +203,32 @@ export class Table {
       for (let k = 0; k < el.length; k++) { i = this.nextSeat(i, inHand); this.seats[i].cards.push(this.deck.pop()); }
     }
     this.pushEvent('deal');
-    this.continueRound(bb);
+    this.emit();
+    // let the deal animation play before the first player is asked to act
+    this.schedule(this.guard(() => this.continueRound(bb)), this.wait(el.length * 2 * 80 + 450));
+  }
+
+  endGame() {
+    this.street = 'over'; this.toAct = -1; this.deadline = null; this.turnId++;
+    const st = this.seats.map((q, i) => (q ? { seat: i, name: q.name, stack: q.stack, isBot: q.isBot } : null)).filter(Boolean).sort((x, y) => y.stack - x.stack);
+    this.over = { standings: st, hands: this.handNo };
+    this.addLog(`Game over — ${st[0].name} wins with ${fmt(st[0].stack)}`, { win: true });
+    this.pushEvent('win', st[0].seat);
+    this.emit();
+  }
+
+  rematch() {
+    if (this.street !== 'over') return;
+    this.config.sb = this.base.sb; this.config.bb = this.base.bb;
+    const now = this.now();
+    this.seats.forEach((q, i) => {
+      if (!q) return;
+      if (q.leaving || (!q.isBot && !q.connected && now - q.dcAt > 90000)) { this.seats[i] = null; return; }
+      Object.assign(q, { stack: this.config.startStack, sittingOut: false, timeouts: 0, cards: [], bet: 0, totalIn: 0, inHand: false, folded: false, allIn: false, acted: false, raiseRight: true, lastAction: null, showCards: false, handName: null, best: null, won: 0, score: 0 });
+    });
+    this.over = null; this.handNo = 0; this.dealer = -1; this.board = []; this.results = null; this.street = 'idle';
+    this.addLog('Rematch!', { hand: true });
+    this.maybeStart(); this.emit();
   }
 
   move(p, amt) {
@@ -381,7 +411,8 @@ export class Table {
       this.schedule(this.guard(() => this.endStreet()), this.wait(1500));
       return;
     }
-    this.continueRound(this.dealer);
+    this.emit();
+    this.schedule(this.guard(() => this.continueRound(this.dealer)), this.wait(k * 130 + 350));
   }
 
   winUncontested(p) {
@@ -472,7 +503,7 @@ export class Table {
       config: this.config, seats, board: this.board, street: this.street, toAct: this.toAct, turnId: this.turnId,
       dealer: this.dealer, sbSeat: this.sbSeat, bbSeat: this.bbSeat, currentBet: this.currentBet,
       pot: this.potTotal(), handNo: this.handNo, deadline: this.deadline, now: this.now(),
-      results: this.results, log: this.log.slice(-80), events: this.events, you, running: this.running,
+      results: this.results, over: this.over, log: this.log.slice(-80), events: this.events, you, running: this.running,
       legal: you >= 0 && you === this.toAct ? this.legal(you) : null,
     };
   }

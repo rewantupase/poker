@@ -75,15 +75,15 @@
     <footer id="dock" class="glass">
       <div id="hero" class="hero">
         <div id="hero-cards" class="hero-cards"></div>
-        <div id="hero-hand" class="hero-hand"></div>
+        <div class="hero-info"><div id="hero-hand" class="hero-hand"></div><button id="odds-line" class="odds-line" hidden></button></div>
       </div>
       <div id="raise-panel" class="raise-panel" hidden>
-        <div class="raise-top">
-          <button class="step" data-step="-1">−</button>
+        <div class="raise-head">
           <div class="raise-amount"><span id="raise-label">Raise to</span><strong id="raise-value">0</strong></div>
-          <button class="step" data-step="1">+</button>
+          <div id="bet-pile" class="bet-pile" aria-label="Your bet — tap a stack to remove a chip"></div>
+          <button class="clear-btn" id="raise-clear" aria-label="Reset bet"><svg viewBox="0 0 24 24" width="20" height="20"><path d="M4 12a8 8 0 1 0 3-6.2M4 4v5h5"/></svg></button>
         </div>
-        <input id="raise-slider" type="range" min="0" max="100" step="1" />
+        <div id="chip-rack" class="chip-rack"></div>
         <div class="presets" id="presets"></div>
       </div>
       <div id="actions" class="actions"></div>
@@ -132,9 +132,15 @@
       <div class="segmented" data-field="blindUp">
         <button data-v="0" class="on">Off</button><button data-v="10">Every 10 hands</button><button data-v="20">Every 20</button>
       </div>
+      <div class="group-title">Game Length</div>
+      <div class="segmented" data-field="maxHands">
+        <button data-v="0" class="on">Endless</button><button data-v="10">10 hands</button><button data-v="20">20 hands</button><button data-v="50">50 hands</button>
+      </div>
       <div class="group">
         <div class="row"><span class="row-label">Allow Rebuys</span>
           <label class="switch"><input type="checkbox" data-field="rebuy" checked /><span></span></label></div>
+        <div class="row"><span class="row-label">Odds Helper</span>
+          <label class="switch"><input type="checkbox" data-field="odds" checked /><span></span></label></div>
       </div>
       <p class="footnote" id="setup-note"></p>
     </div>
@@ -175,6 +181,19 @@
     <div class="grabber"></div>
     <div class="nav"><span></span><h2>Hand Rankings</h2><button class="nav-btn strong" data-close>Done</button></div>
     <div class="sheet-body" id="rankings-body"></div>
+  </div>
+
+  <div class="sheet" id="sheet-odds" role="dialog" aria-modal="true">
+    <div class="grabber"></div>
+    <div class="nav"><span></span><h2>Odds &amp; Deck</h2><button class="nav-btn strong" data-close>Done</button></div>
+    <div class="sheet-body" id="odds-body"></div>
+  </div>
+
+  <div id="over" class="over" hidden>
+    <div class="over-card">
+      <div id="over-body"></div>
+      <div id="over-actions" class="over-actions"></div>
+    </div>
   </div>
 
   <div id="overlay" class="overlay" hidden>

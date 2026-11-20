@@ -9,7 +9,12 @@ An iOS-style poker game that runs in any browser (desktop, tablet, phone) and in
 - **Online tables**: the host gets a 5-letter code and an invite link, friends join from any device, you can mix humans and bots, and spectators can watch
 - Turn timer with auto check/fold. Players who time out twice are sat out
 - Reconnects automatically if a phone sleeps or the network drops
-- Raise slider with Min / ½ Pot / ¾ Pot / Pot / All-in presets, plus pre-actions (Check/Fold, Call Any)
+- **Chip betting**: tap chips (hold to repeat) to build your raise, tap a stack to take a chip back, or use Min / ½ Pot / ¾ Pot / Pot / All-in. Chips fly to the table and into the pot, and pots are paid out to the winner
+- **Chips on the felt**: every player's stack, bets in front of players and the pot are drawn as chip piles
+- **Dealing animation**: a deck sits next to the dealer button and each card flies out to every seat in turn
+- **Odds helper**: live win %, pot odds, outs, how your hand is likely to finish, and a 52-card deck tracker (the host can turn it off per table)
+- **Game length**: endless, or 10 / 20 / 50 hands with a winner screen and rematch
+- Pre-actions (Check/Fold, Call Any)
 - Showdown highlights the winning five cards and shows each hand's name
 - Chat, hand history, hand-rankings screen, sounds, screen wake lock
 - Rebuys on/off and optional blind increases (every 10 or 20 hands)
@@ -50,11 +55,13 @@ css/style.css         iOS design system: grouped lists, sheets, switches, glass
 js/engine.js          Authoritative Hold'em engine (pots, betting, timers)
 js/cards.js           Deck, 7-card hand evaluator, hand names
 js/bot.js             Bot AI (Monte Carlo equity)
+js/odds.js            Win %, outs and hand-finish odds for the helper
 js/net.js             Host/guest networking (PeerJS)
 js/app.js             UI controller and rendering
 js/sound.js           Synthesized sound effects (no audio files)
 config.js             Optional TURN / signaling settings
 vendor/peerjs.min.js  PeerJS 1.5.4 (bundled, no CDN needed)
+fonts/                Roboto (bundled)
 sw.js, manifest.webmanifest, icons/   PWA install + offline
 ```
 

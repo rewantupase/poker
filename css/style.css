@@ -359,3 +359,201 @@ svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; 
 .rank-cards .card .cc { font-size: 14px; right: 50%; transform: translateX(50%); bottom: 2px; }
 .rank-cards .card .cr { font-size: 11px; left: 50%; transform: translateX(-50%); top: 3px; }
 @media (max-width: 400px) { .rank-cards .card.xs { --w: 21px; } .rank-cards .card .cc { font-size: 11px; } .rank-cards .card .cr { font-size: 9px; } }
+
+/* =========================================================
+   Chips on the felt, chip betting, deck, odds, game over
+   ========================================================= */
+.chip.c5 { --c: #ff453a; }
+#table { --cs: clamp(15px, calc(var(--u) * 1.75), 23px); --st: calc(var(--cs) * .17); }
+.pile { display: inline-flex; align-items: flex-end; gap: 2px; }
+.pile .col { position: relative; width: var(--cs); height: calc(var(--cs) + var(--h, 0) * var(--st)); }
+.pile .chip { position: absolute; left: 0; bottom: calc(var(--i) * var(--st)); width: var(--cs); height: var(--cs); }
+.chip { box-shadow: 0 1px 1.5px rgba(0, 0, 0, .55), inset 0 0 0 2.5px rgba(255, 255, 255, .92), inset 0 0 0 4.5px var(--c); }
+.chip.fly { position: fixed; z-index: 70; width: 22px; height: 22px; pointer-events: none; box-shadow: 0 6px 12px rgba(0, 0, 0, .45), inset 0 0 0 3px rgba(255, 255, 255, .92), inset 0 0 0 5px var(--c); }
+
+/* bets in front of players */
+.bet { display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; padding: 0; z-index: 2; }
+.bet .pile { filter: drop-shadow(0 3px 3px rgba(0, 0, 0, .4)); }
+.bet-amt { background: rgba(0, 0, 0, .5); padding: 1px 8px; border-radius: 9px; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* pot pile in the middle */
+.pot-row { display: flex; align-items: flex-end; gap: 8px; }
+.pot-row .pile { filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .45)); margin-bottom: 2px; }
+.pot-main { padding-left: 11px; }
+
+/* each player's stack, beside their nameplate */
+.spile { position: absolute; bottom: 3px; left: calc(50% + var(--av) * .8); pointer-events: none; z-index: 1; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .4)); }
+.seat.right .spile { left: auto; right: calc(50% + var(--av) * .8); }
+.seat.folded .spile, .seat.waiting .spile { opacity: .55; }
+
+/* dealer's deck */
+.deckpile { position: absolute; transform: translate(-50%, -50%); z-index: 2; width: calc(var(--cw) * .56); height: calc(var(--cw) * .56 * 1.4); }
+.deckpile .card { --w: calc(var(--cw) * .56); position: absolute; left: 0; top: 0; }
+.deckpile .card:nth-child(1) { transform: translate(-2px, 2px); }
+.deckpile .card:nth-child(2) { transform: translate(-1px, 1px); }
+.deckpile .card:nth-child(3) { transform: none; }
+.deckpile .card::after { inset: 8%; }
+
+/* ---- chip betting panel ---- */
+.raise-head { display: flex; align-items: center; gap: 10px; min-height: 64px; }
+.raise-amount { min-width: 92px; align-items: flex-start; text-align: left; }
+.bet-pile { flex: 1; display: flex; align-items: flex-end; justify-content: center; gap: 10px; min-height: 62px; flex-wrap: nowrap; overflow: hidden; }
+.stack { position: relative; width: 34px; height: 60px; display: block; }
+.stack-chips { position: absolute; inset: 0; pointer-events: none; }
+.stack-chips .chip { position: absolute; left: 3px; bottom: calc(var(--i) * 5px); width: 28px; height: 28px; }
+.stack b { position: absolute; right: -6px; top: 0; font-size: 11px; background: rgba(0, 0, 0, .7); padding: 0 5px; border-radius: 8px; line-height: 16px; }
+.stack:active { transform: scale(.94); }
+.loose { align-self: center; font-size: 12px; color: var(--label2); font-weight: 600; }
+.clear-btn { width: 40px; height: 40px; border-radius: 50%; background: var(--fill); display: grid; place-items: center; flex: none; }
+.clear-btn:disabled { opacity: .35; }
+.clear-btn:active:not(:disabled) { background: rgba(120, 120, 128, .4); }
+.chip-rack { display: flex; justify-content: center; gap: 12px; padding: 2px 0 4px; }
+.chip-btn { --c: #0a84ff; position: relative; width: 56px; height: 56px; border-radius: 50%; background: var(--c); color: #fff; font-weight: 800; font-size: 13px; display: grid; place-items: center; touch-action: manipulation; user-select: none; -webkit-user-select: none;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, .4), 0 8px 16px rgba(0, 0, 0, .35); transition: transform .08s, box-shadow .08s, opacity .2s; }
+.chip-btn::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: repeating-conic-gradient(rgba(255, 255, 255, .95) 0 14deg, transparent 14deg 45deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 72%, #000 73%); mask: radial-gradient(circle, transparent 0 72%, #000 73%); }
+.chip-btn::after { content: ""; position: absolute; inset: 8px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, .85); }
+.chip-btn span { position: relative; z-index: 1; text-shadow: 0 1px 2px rgba(0, 0, 0, .5); pointer-events: none; }
+.chip-btn:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 rgba(0, 0, 0, .4), 0 3px 8px rgba(0, 0, 0, .35); }
+.chip-btn:disabled { opacity: .3; }
+.chip-btn.c1 { --c: #0a84ff; } .chip-btn.c2 { --c: #30a14e; } .chip-btn.c3 { --c: #2a2a2d; } .chip-btn.c4 { --c: #a24bd8; } .chip-btn.c5 { --c: #e0392f; }
+#dock.raising .card.lg { --w: 40px; }
+#dock.raising .hero-hand { display: none; }
+
+/* ---- odds line + sheet ---- */
+.hero-info { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.odds-line { display: inline-flex; align-items: center; gap: 7px; height: 26px; padding: 0 10px; border-radius: 13px; background: var(--fill2); font-size: 12px; white-space: nowrap; }
+.odds-line.stale { opacity: .6; }
+.odds-line b { font-size: 14px; font-variant-numeric: tabular-nums; }
+.odds-bar { width: 42px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .14); overflow: hidden; }
+.odds-bar i { display: block; height: 100%; border-radius: 3px; transition: width .4s; }
+.odds-sub { color: var(--label2); font-weight: 500; }
+.odds-need { font-weight: 700; padding-left: 7px; border-left: .5px solid var(--sep); }
+.odds-need.good { color: var(--green); } .odds-need.bad { color: var(--orange); }
+@media (max-width: 520px) { .hero-info { align-items: flex-start; } }
+
+.odds-card { background: var(--bg3); border-radius: 12px; padding: 14px; }
+.stackbar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--fill); }
+.stackbar i { display: block; height: 100%; }
+.stackbar .w { background: var(--green); } .stackbar .t { background: var(--yellow); } .stackbar .l { background: var(--red); }
+.legend { display: flex; justify-content: space-between; margin-top: 10px; font-size: 13px; color: var(--label2); }
+.legend span:nth-child(2) { text-align: center; } .legend span:last-child { text-align: right; }
+.legend b { display: block; font-size: 22px; color: #fff; font-variant-numeric: tabular-nums; }
+.pot-odds { font-size: 15px; line-height: 1.45; }
+.verdict { margin-top: 8px; font-weight: 600; font-size: 14px; }
+.verdict.good { color: var(--green); } .verdict.bad { color: var(--orange); }
+.cat-row { display: grid; grid-template-columns: 124px 1fr 42px; gap: 10px; align-items: center; font-size: 14px; padding: 5px 0; }
+.cat-row b { text-align: right; font-variant-numeric: tabular-nums; }
+.cat-row .bar { height: 8px; border-radius: 4px; background: var(--fill); overflow: hidden; }
+.cat-row .bar i { display: block; height: 100%; background: var(--blue); border-radius: 4px; }
+.cat-row.cur { font-weight: 700; } .cat-row.cur .bar i { background: var(--green); }
+.deck-grid { display: grid; grid-template-columns: repeat(13, 1fr); gap: 3px; }
+.dk { aspect-ratio: .72; border-radius: 4px; background: #f2f2f7; color: #1c1c1e; font-style: normal; font-size: 10px; font-weight: 700; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.05; }
+.dk b { font-weight: 800; }
+.dk.red { color: #e0201b; }
+.dk.mine { background: var(--blue); color: #fff; box-shadow: 0 0 0 2px #fff; }
+.dk.board { background: var(--green); color: #00260c; }
+.dk.shown { background: var(--orange); color: #2b1600; }
+.dk.out { box-shadow: 0 0 0 2px var(--yellow); }
+.deck-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 12px; color: var(--label2); }
+.deck-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; background: #f2f2f7; display: inline-block; }
+.sw.mine { background: var(--blue); } .sw.board { background: var(--green); } .sw.shown { background: var(--orange); } .sw.out { background: #f2f2f7; box-shadow: 0 0 0 2px var(--yellow); }
+
+/* ---- game over ---- */
+.over { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 20px; background: rgba(0, 0, 0, .6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); animation: rise .35s ease; }
+.over-card { width: 100%; max-width: 380px; background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur); border-radius: 22px; padding: 24px 18px 18px; text-align: center; box-shadow: 0 30px 80px rgba(0, 0, 0, .5); }
+.over-card .trophy { font-size: 52px; line-height: 1; }
+.over-card h2 { margin: 10px 0 2px; font-size: 26px; }
+.over-card p { margin: 0 0 16px; color: var(--label2); }
+.over-card .group { background: var(--bg3); text-align: left; margin-bottom: 16px; }
+.over-actions { display: grid; gap: 10px; }
+
+/* polish: stacks sit under the plate on narrow tables, deck gets thickness */
+#table.portrait { --cs: clamp(12px, calc(var(--u) * 3.4), 17px); }
+#table.portrait .seat:not(.me) .spile, #table.portrait .seat.right:not(.me) .spile { left: 50%; right: auto; bottom: auto; top: calc(100% + 3px); transform: translateX(-50%); }
+.deckpile .card:nth-child(1) { transform: translate(-3px, 3px); }
+.deckpile .card:nth-child(2) { transform: translate(-2px, 2px); }
+.deckpile .card:nth-child(3) { transform: translate(-1px, 1px); }
+.deckpile .card:nth-child(4) { transform: none; }
+
+/* =========================================================
+   Table style v2: slate felt, flat chips, dark player bars, classic cards
+   ========================================================= */
+@font-face { font-family: Roboto; font-weight: 400; font-display: swap; src: url(/fonts/roboto-latin-400-normal.woff2) format("woff2"); }
+@font-face { font-family: Roboto; font-weight: 500; font-display: swap; src: url(/fonts/roboto-latin-500-normal.woff2) format("woff2"); }
+@font-face { font-family: Roboto; font-weight: 700; font-display: swap; src: url(/fonts/roboto-latin-700-normal.woff2) format("woff2"); }
+#game, .over-card { font-family: Roboto, var(--font); letter-spacing: 0; }
+#bg { background: radial-gradient(1000px 600px at 50% -10%, rgba(120, 140, 175, .14), transparent 60%), #0e1013; }
+
+/* slate felt */
+.rail { background: linear-gradient(180deg, #2b2f36, #181a1e 60%, #23262c); }
+.felt { background: radial-gradient(ellipse at 50% 38%, #4c5562 0%, #414956 42%, #353c47 78%, #2c323b 100%); box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .06), inset 0 0 60px rgba(0, 0, 0, .4), inset 0 8px 30px rgba(0, 0, 0, .3); }
+.felt::after { opacity: .95; mix-blend-mode: overlay; }
+.felt-logo { color: rgba(255, 255, 255, .05); }
+
+/* flat chips: solid colour, dashed rim, 3D lower edge, value in the middle */
+.chip { --c: #b82838; --cd: #7c1624; --th: calc(var(--cs, 18px) * .1); position: relative; display: inline-block; border-radius: 50%; background: var(--c);
+  box-shadow: 0 var(--th) 0 var(--cd), 0 calc(var(--th) + 1px) 5px rgba(0, 0, 0, .3); }
+.chip::before { content: ""; position: absolute; inset: 0; border-radius: 50%; background: repeating-conic-gradient(from -11deg, rgba(255, 255, 255, .9) 0 22deg, transparent 22deg 45deg);
+  -webkit-mask: radial-gradient(circle, transparent 0 78%, #000 79%); mask: radial-gradient(circle, transparent 0 78%, #000 79%); }
+.chip::after { display: none; }
+.chip b { position: absolute; inset: 0; display: grid; place-items: center; font-style: normal; font-weight: 700; color: #fff; font-size: calc(var(--cs, 18px) * .4); letter-spacing: -.02em; }
+.chip.c1, .chip-btn.c1 { --c: #b82838; --cd: #7c1624; }
+.chip.c2, .chip-btn.c2 { --c: #2f6fd0; --cd: #1b448a; }
+.chip.c3, .chip-btn.c3 { --c: #2e9a56; --cd: #1b6434; }
+.chip.c4, .chip-btn.c4 { --c: #2b2f35; --cd: #0f1114; }
+.chip.c5, .chip-btn.c5 { --c: #8a4fd0; --cd: #55308a; }
+.chip.fly { --cs: 24px; width: 24px; height: 24px; }
+.stack-chips .chip { --cs: 30px; width: 30px; height: 30px; left: 2px; }
+.stack-chips .chip b { font-size: 11px; }
+
+#table { --cs: clamp(19px, calc(var(--u) * 2.6), 32px); --st: calc(var(--cs) * .2); }
+#table.portrait { --cs: clamp(15px, calc(var(--u) * 4.6), 21px); }
+#table.portrait .chip b { display: none; }
+.pile { align-items: flex-end; gap: 3px; }
+.pile .col { height: calc(var(--cs) + var(--h, 0) * var(--st) + var(--cs) * .1); }
+.pile .chip { width: var(--cs); height: var(--cs); }
+
+/* bet amount sits above the chips; pot too */
+.bet { gap: 4px; }
+.bet-amt { background: none; padding: 0; font-size: clamp(14px, calc(var(--u) * 2.1), 22px); font-weight: 700; color: #fff; text-shadow: 0 2px 4px rgba(0, 0, 0, .55); }
+.pot-row { flex-direction: column; align-items: center; gap: 4px; }
+.pot-main { background: none; padding: 0; font-size: clamp(17px, calc(var(--u) * 2.5), 28px); font-weight: 700; text-shadow: 0 2px 4px rgba(0, 0, 0, .5); }
+.pot-main small { font-size: .55em; font-weight: 500; margin-right: 5px; color: rgba(255, 255, 255, .7); }
+
+/* chip buttons use the same flat chips */
+.chip-btn { width: 58px; height: 58px; font-size: 17px; font-weight: 700; box-shadow: 0 6px 0 var(--cd), 0 10px 16px rgba(0, 0, 0, .4); }
+.chip-btn::before { background: repeating-conic-gradient(from -11deg, rgba(255, 255, 255, .9) 0 22deg, transparent 22deg 45deg); -webkit-mask: radial-gradient(circle, transparent 0 78%, #000 79%); mask: radial-gradient(circle, transparent 0 78%, #000 79%); }
+.chip-btn::after { display: none; }
+.chip-btn:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 2px 0 var(--cd), 0 4px 8px rgba(0, 0, 0, .4); }
+
+/* dark player bars with green edges and a gold coin */
+.plate { background: #1b1e20; border-radius: 7px; border-top: 2px solid #1f6a2a; border-bottom: 2px solid #1f6a2a; backdrop-filter: none; -webkit-backdrop-filter: none; padding: 2px 10px 3px; box-shadow: 0 4px 12px rgba(0, 0, 0, .45); min-width: calc(var(--av) * 1.6); }
+.pname { font-size: 13px; font-weight: 700; color: #fff; }
+.pstack { display: flex; align-items: center; justify-content: center; gap: 5px; color: #fff; font-weight: 500; }
+.coin { width: 13px; height: 13px; border-radius: 50%; display: inline-block; flex: none; background: radial-gradient(circle at 35% 30%, #ffe48a, #f2bd1f 55%, #c88a07); box-shadow: inset 0 0 0 2px #f8d24f, inset 0 0 0 3px #d49a0c; }
+.seat.me .plate { box-shadow: 0 4px 12px rgba(0, 0, 0, .45), 0 0 0 1.5px rgba(48, 209, 88, .7); }
+.avatar { box-shadow: 0 0 0 4px #1f6a2a, 0 6px 16px rgba(0, 0, 0, .45); }
+.seat.active .avatar { box-shadow: 0 0 0 4px #1f6a2a, 0 0 26px rgba(48, 209, 88, .5); }
+.avatar.ghost { box-shadow: none; }
+.seat.folded .avatar, .seat.waiting .avatar { box-shadow: 0 0 0 4px #2a2d30; }
+
+/* classic cards: white face, big pip, thin rank */
+.card { background: #fff; color: #111; border-radius: calc(var(--w) * .1); box-shadow: 0 1px 3px rgba(0, 0, 0, .5); font-family: Roboto, var(--rounded); }
+.card.red { color: #d3202c; }
+.card .cr { left: 9%; top: 2%; font-weight: 500; font-size: calc(var(--w) * .5); letter-spacing: -.07em; }
+.card .cs { left: 12%; top: calc(2% + var(--w) * .5); font-size: calc(var(--w) * .27); }
+.card .cc { right: 10%; bottom: 7%; font-size: calc(var(--w) * .66); }
+.card.back { background: #2155b4; }
+.card.back::after { background: repeating-linear-gradient(45deg, rgba(255, 255, 255, .14) 0 3px, transparent 3px 7px); border-color: rgba(255, 255, 255, .5); }
+.card.hl { box-shadow: 0 0 0 2.5px var(--yellow), 0 6px 18px rgba(255, 214, 10, .35); }
+
+/* fix: count badge style must not hit the value printed on each chip */
+.stack b { position: static; background: none; padding: 0; border-radius: 0; line-height: normal; }
+.stack > b { position: absolute; right: -6px; top: -2px; font-size: 11px; background: rgba(0, 0, 0, .75); padding: 0 5px; border-radius: 8px; line-height: 16px; }
+.stack-chips .chip b { position: absolute; inset: 0; }
+.bet-pile { overflow: visible; padding-bottom: 8px; }
+
+/* fix: dashed rim mask must be sized to the chip edge */
+.chip::before, .chip-btn::before { -webkit-mask: radial-gradient(circle closest-side, transparent 77%, #000 78%); mask: radial-gradient(circle closest-side, transparent 77%, #000 78%); }
