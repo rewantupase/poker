@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Felt — Texas Hold'em</title>
+  <meta name="description" content="Play No-Limit Texas Hold'em with friends or bots, right in your browser." />
+  <meta name="theme-color" content="#000000" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Felt" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/css/style.css" />
+  <script src="/config.js"></script>
+  <script src="/vendor/peerjs.min.js" defer></script>
+  <script type="module" src="/js/app.js"></script>
+</head>
+<body>
+  <div id="bg"></div>
+
+  <!-- HOME -->
+  <section id="home" class="screen active">
+    <div class="home-card">
+      <img class="app-icon" src="/icons/icon-192.png" alt="" />
+      <h1>Felt</h1>
+      <p class="subtitle">No-Limit Texas Hold'em</p>
+
+      <div class="group">
+        <label class="row">
+          <span class="row-label">Name</span>
+          <input id="name-input" class="row-input" maxlength="14" placeholder="Your name" autocomplete="nickname" spellcheck="false" />
+        </label>
+      </div>
+
+      <div class="home-actions">
+        <button class="btn btn-filled btn-lg" data-go="bots">Play vs Bots</button>
+        <button class="btn btn-tinted btn-lg" data-go="host">Host a Table</button>
+        <button class="btn btn-gray btn-lg" data-go="join">Join with Code</button>
+      </div>
+      <button class="link-btn" data-go="rankings">Hand Rankings</button>
+    </div>
+  </section>
+
+  <!-- GAME -->
+  <section id="game" class="screen">
+    <header class="topbar glass">
+      <button class="circle-btn" id="btn-menu" aria-label="Menu">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+      <div class="top-center">
+        <button id="room-pill" class="pill" hidden></button>
+        <div id="table-info" class="table-info"></div>
+      </div>
+      <button class="circle-btn" id="btn-log" aria-label="Chat and history">
+        <svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg>
+        <span id="chat-badge" class="badge" hidden></span>
+      </button>
+    </header>
+
+    <main id="table-wrap">
+      <div id="table">
+        <div class="rail"><div class="felt"><div class="felt-logo">FELT</div></div></div>
+        <div id="center">
+          <div id="pot" class="pot"></div>
+          <div id="board" class="board"></div>
+          <div id="status" class="status"></div>
+        </div>
+        <div id="seats"></div>
+      </div>
+    </main>
+
+    <footer id="dock" class="glass">
+      <div id="hero" class="hero">
+        <div id="hero-cards" class="hero-cards"></div>
+        <div id="hero-hand" class="hero-hand"></div>
+      </div>
+      <div id="raise-panel" class="raise-panel" hidden>
+        <div class="raise-top">
+          <button class="step" data-step="-1">−</button>
+          <div class="raise-amount"><span id="raise-label">Raise to</span><strong id="raise-value">0</strong></div>
+          <button class="step" data-step="1">+</button>
+        </div>
+        <input id="raise-slider" type="range" min="0" max="100" step="1" />
+        <div class="presets" id="presets"></div>
+      </div>
+      <div id="actions" class="actions"></div>
+    </footer>
+  </section>
+
+  <!-- SHEETS -->
+  <div id="scrim" class="scrim"></div>
+
+  <div class="sheet" id="sheet-setup" role="dialog" aria-modal="true">
+    <div class="grabber"></div>
+    <div class="nav">
+      <button class="nav-btn" data-close>Cancel</button>
+      <h2 id="setup-title">New Table</h2>
+      <button class="nav-btn strong" id="setup-start">Start</button>
+    </div>
+    <div class="sheet-body">
+      <div class="group-title">Table</div>
+      <div class="group">
+        <div class="row"><span class="row-label">Max Players</span>
+          <div class="stepper" data-field="maxSeats" data-min="2" data-max="10"><button>−</button><output>6</output><button>+</button></div></div>
+        <div class="row" id="row-bots"><span class="row-label">Bots</span>
+          <div class="stepper" data-field="bots" data-min="0" data-max="9"><button>−</button><output>5</output><button>+</button></div></div>
+        <div class="row"><span class="row-label">Blinds</span>
+          <select class="row-select" data-field="blinds">
+            <option value="5/10">5 / 10</option>
+            <option value="10/20" selected>10 / 20</option>
+            <option value="25/50">25 / 50</option>
+            <option value="50/100">50 / 100</option>
+            <option value="100/200">100 / 200</option>
+          </select></div>
+        <div class="row"><span class="row-label">Starting Stack</span>
+          <select class="row-select" data-field="startStack">
+            <option value="1000">1,000</option>
+            <option value="2000" selected>2,000</option>
+            <option value="5000">5,000</option>
+            <option value="10000">10,000</option>
+            <option value="25000">25,000</option>
+          </select></div>
+      </div>
+      <div class="group-title">Turn Timer</div>
+      <div class="segmented" data-field="turnTime">
+        <button data-v="15">15s</button><button data-v="25" class="on">25s</button><button data-v="40">40s</button><button data-v="60">60s</button>
+      </div>
+      <div class="group-title">Blinds Increase</div>
+      <div class="segmented" data-field="blindUp">
+        <button data-v="0" class="on">Off</button><button data-v="10">Every 10 hands</button><button data-v="20">Every 20</button>
+      </div>
+      <div class="group">
+        <div class="row"><span class="row-label">Allow Rebuys</span>
+          <label class="switch"><input type="checkbox" data-field="rebuy" checked /><span></span></label></div>
+      </div>
+      <p class="footnote" id="setup-note"></p>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet-join" role="dialog" aria-modal="true">
+    <div class="grabber"></div>
+    <div class="nav">
+      <button class="nav-btn" data-close>Cancel</button>
+      <h2>Join Table</h2>
+      <button class="nav-btn strong" id="join-go">Join</button>
+    </div>
+    <div class="sheet-body">
+      <input id="join-code" class="code-input" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+      <p class="footnote center">Ask the host for the 5-character table code, or open their invite link.</p>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet-menu" role="dialog" aria-modal="true">
+    <div class="grabber"></div>
+    <div class="nav"><span></span><h2>Table</h2><button class="nav-btn strong" data-close>Done</button></div>
+    <div class="sheet-body" id="menu-body"></div>
+  </div>
+
+  <div class="sheet" id="sheet-log" role="dialog" aria-modal="true">
+    <div class="grabber"></div>
+    <div class="nav"><span></span><h2>Chat &amp; History</h2><button class="nav-btn strong" data-close>Done</button></div>
+    <div class="sheet-body log-body">
+      <div id="log-list" class="log-list"></div>
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" maxlength="140" placeholder="Message" autocomplete="off" />
+        <button class="send" aria-label="Send"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+      </form>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet-rankings" role="dialog" aria-modal="true">
+    <div class="grabber"></div>
+    <div class="nav"><span></span><h2>Hand Rankings</h2><button class="nav-btn strong" data-close>Done</button></div>
+    <div class="sheet-body" id="rankings-body"></div>
+  </div>
+
+  <div id="overlay" class="overlay" hidden>
+    <div class="overlay-card">
+      <div class="spinner"></div>
+      <div id="overlay-text">Connecting…</div>
+      <button class="btn btn-gray" id="overlay-cancel">Cancel</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+</body>
+</html>
