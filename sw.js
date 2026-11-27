@@ -1,6 +1,6 @@
 // Offline app shell. Bump VERSION when you deploy changes.
-const VERSION = 'felt-v2';
-const ASSETS = ['/', '/index.html', '/css/style.css', '/config.js', '/fonts/roboto-latin-400-normal.woff2', '/fonts/roboto-latin-500-normal.woff2', '/fonts/roboto-latin-700-normal.woff2', '/vendor/peerjs.min.js',
+const VERSION = 'felt-v3';
+const ASSETS = ['/', '/index.html', '/css/style.css', '/config.js', '/fonts/roboto-latin-400-normal.woff2', '/fonts/roboto-latin-500-normal.woff2', '/fonts/roboto-latin-700-normal.woff2', '/vendor/peerjs.min.js', '/vendor/qrcode.js',
   '/js/app.js', '/js/engine.js', '/js/cards.js', '/js/bot.js', '/js/odds.js', '/js/net.js', '/js/sound.js',
   '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ASSETS))); self.skipWaiting(); });

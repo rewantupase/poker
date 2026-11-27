@@ -1,0 +1,8 @@
+{
+  "name": "felt-poker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Felt — No-Limit Texas Hold'em. Static web app; optional Wi-Fi server for offline play.",
+  "scripts": { "start": "node lan-server.js" },
+  "engines": { "node": ">=16" }
+}

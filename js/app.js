@@ -1,7 +1,7 @@
 import { Table } from './engine.js';
 import { evaluate, describeHole, rankOf, suitOf, RANK_CH, SUIT_CH, isRed, CATEGORY } from './cards.js';
 import { analyze, findOuts } from './odds.js';
-import { HostNet, ClientNet } from './net.js';
+import { HostNet, ClientNet, LanHostNet, LanClientNet, detectLan } from './net.js';
 import { sfx, unlockAudio, isSoundOn, setSound } from './sound.js';
 
 // ---------------------------------------------------------------- utils
@@ -83,6 +83,7 @@ function openSheet(id) {
   if (id === 'sheet-log') { S.unread = 0; renderBadge(); renderLog(); setTimeout(() => { const l = $('#log-list'); l.scrollTop = l.scrollHeight; }, 50); }
   if (id === 'sheet-menu') renderMenu();
   if (id === 'sheet-odds') renderOdds();
+  if (id === 'sheet-join') pollRooms();
 }
 function closeSheets(silent) {
   S.sheet = null;
@@ -198,6 +199,7 @@ function onTableChange() {
     if (!t) return;
     applyView(t.viewFor(S.myId));
     if (S.host) for (const e of S.host.entries) S.host.send(e, { t: 'state', v: t.viewFor(e.pid) });
+    pushMeta();
   });
 }
 
@@ -211,9 +213,9 @@ function startLocal(cfg, online, bots) {
   requestWake();
   fitTable();
   if (online) {
-    if (!window.Peer) { toast('Network library failed to load'); return; }
+    if (!S.lan && !window.Peer) { toast('Network library failed to load'); return; }
     overlay('Creating table…', () => leaveTable(true));
-    S.host = new HostNet({
+    S.host = new (S.lan ? LanHostNet : HostNet)({
       onReady: (code) => {
         S.code = code; overlay(null);
         history.replaceState(null, '', '?t=' + code);
@@ -256,7 +258,7 @@ function hostMessage(entry, msg) {
 function joinTable(code) {
   code = code.trim().toUpperCase();
   if (code.length !== 5) { toast('Codes are 5 characters'); return; }
-  if (!window.Peer) { toast('Network library failed to load'); return; }
+  if (!S.lan && !window.Peer) { toast('Network library failed to load'); return; }
   closeSheets();
   resetClientState();
   S.mode = 'client'; S.code = code; S.reconnects = 0;
@@ -265,7 +267,7 @@ function joinTable(code) {
 }
 function connectClient(first) {
   if (S.client) S.client.destroy();
-  S.client = new ClientNet(S.code, {
+  S.client = new (S.lan ? LanClientNet : ClientNet)(S.code, {
     onOpen: () => {
       S.reconnects = 0;
       S.client.send({ t: 'join', name: myName(), token: S.myId });
@@ -299,6 +301,19 @@ function reconnectSoon() {
   overlay('Reconnecting…', () => leaveTable(true));
   setTimeout(() => { if (!S.leaving && S.mode === 'client') connectClient(false); }, Math.min(1000 * S.reconnects, 4000));
 }
+let roomTimer = 0;
+async function pollRooms() {
+  clearTimeout(roomTimer);
+  const box = $('#lan-rooms');
+  if (!S.lan || !$('#sheet-join').classList.contains('show')) return;
+  try {
+    const rooms = await (await fetch('/api/rooms', { cache: 'no-store' })).json();
+    box.hidden = false;
+    $('#lan-rooms-list').innerHTML = rooms.length ? rooms.map((r) => `<button class="row btn-row" data-room="${esc(r.code)}"><span class="row-label">${esc(r.title || 'Table')}<small>${esc(r.code)} · ${r.seated}/${r.max} seated${r.bots ? ` · ${r.bots} bots` : ''} · ${esc(r.blinds || '')}</small></span><span class="row-chev">Join</span></button>`).join('') : '<div class="row"><span class="row-label muted">No tables yet — ask a friend to host</span></div>';
+  } catch {}
+  roomTimer = setTimeout(pollRooms, 2000);
+}
+$('#lan-rooms-list').addEventListener('click', (e) => { const b = e.target.closest('[data-room]'); if (b) joinTable(b.dataset.room); });
 $('#join-go').addEventListener('click', () => joinTable($('#join-code').value));
 $('#join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') joinTable(e.target.value); });
 $('#join-code').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
@@ -349,8 +364,42 @@ function overlay(text, onCancel) {
   $('#overlay-cancel').onclick = () => { o.hidden = true; onCancel && onCancel(); };
 }
 
+function inviteUrl() {
+  if (S.lan) {
+    const local = /^(localhost|127\.|\[::1\])/.test(location.hostname);
+    const ip = S.lan.ips && S.lan.ips[0];
+    const base = local && ip ? `http://${ip.ip}:${location.port || S.lan.port}` : location.origin;
+    return `${base}/?t=${S.code}`;
+  }
+  return `${location.origin}/?t=${S.code}`;
+}
+function showInvite() {
+  const url = inviteUrl();
+  $('#inv-code').textContent = S.code;
+  $('#inv-url').textContent = url.replace('http://', '');
+  let svg = '';
+  try { const qr = window.qrcode(0, 'M'); qr.addData(url); qr.make(); svg = qr.createSvgTag({ cellSize: 6, margin: 2, scalable: true }); } catch {}
+  $('#inv-qr').innerHTML = svg;
+  const local = /^(localhost|127\.|\[::1\])/.test(location.hostname);
+  $('#inv-note').textContent = local && !(S.lan.ips && S.lan.ips.length)
+    ? 'No Wi-Fi address found. Connect this computer to the Wi-Fi (or a hotspot) and restart.'
+    : 'Friends on the same Wi-Fi can scan this, or open the address in a browser. No internet needed.';
+  openSheet('sheet-invite');
+}
+$('#inv-copy').addEventListener('click', async () => { try { await navigator.clipboard.writeText(inviteUrl()); toast('Link copied'); } catch { toast('Copy not available here'); } });
+let lastMeta = '';
+function pushMeta() {
+  const t = S.table;
+  if (!S.lan || !S.host || !S.host.setMeta || !t) return;
+  const v = t.viewFor(S.myId);
+  const meta = { title: myName() + "'s table", seated: v.seats.filter(Boolean).length, max: v.config.maxSeats, bots: v.seats.filter((x) => x && x.isBot).length, blinds: `${fmt(v.config.sb)}/${fmt(v.config.bb)}`, running: !!v.handNo };
+  const k = JSON.stringify(meta);
+  if (k !== lastMeta) { lastMeta = k; S.host.setMeta(meta); }
+}
+
 async function shareInvite(auto) {
   if (!S.code) return;
+  if (S.lan) { if (auto) showInvite(); else showInvite(); return; }
   const url = `${location.origin}/?t=${S.code}`;
   if (auto) { toast(`Table ${S.code} is open — share the code`); return; }
   try {
@@ -1122,6 +1171,11 @@ window.addEventListener('beforeunload', (e) => { if (S.mode === 'host' && S.host
 // ---------------------------------------------------------------- boot
 const params = new URLSearchParams(location.search);
 const invite = params.get('t');
+detectLan().then((info) => {
+  if (!info) return;
+  S.lan = info;
+  $('#lan-badge').hidden = false;
+});
 if (invite) {
   $('#join-code').value = invite.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 5);
   if (nameInput.value.trim()) setTimeout(() => openSheet('sheet-join'), 250);

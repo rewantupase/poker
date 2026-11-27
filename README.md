@@ -66,3 +66,18 @@ sw.js, manifest.webmanifest, icons/   PWA install + offline
 ```
 
 When you ship an update, bump `VERSION` in `sw.js` so installed copies refresh.
+
+## Wi-Fi mode (no internet needed)
+
+**Phones only? Host from an Android phone with Termux** (free, from F-Droid): run `pkg install nodejs git`, copy this folder onto the phone (or `git clone` once while online), then `cd poker && node lan-server.js`. Turn on that phone's hotspot (no data needed) or use shared Wi-Fi; everyone else — Android or iPhone — just opens the address in a browser. An iPhone can join but can't be the server.
+
+Play with friends on the same Wi-Fi (or a phone/laptop hotspot) with no internet at all.
+
+1. On **one** computer with [Node.js](https://nodejs.org) installed, double-click `Start Wi-Fi Game.bat` (Windows) / `Start Wi-Fi Game.command` (Mac), or run `npm start`.
+2. Open `http://localhost:3000` on that computer, tap **Host a Table**, and share the QR code.
+3. Friends open the address shown (or scan the QR) and tap **Join with Code** → pick the table from "Tables on this Wi-Fi".
+
+The app detects the server automatically and shows a green "Wi-Fi mode" badge. Notes:
+- Allow Node through the firewall when prompted (private networks only).
+- Hostel/public Wi-Fi often blocks device-to-device traffic ("client isolation"). Use a hotspot instead — it works without mobile data.
+- Over plain `http` there is no install prompt, wake-lock or clipboard on some phones; the game itself is unaffected.

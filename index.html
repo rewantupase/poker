@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="/css/style.css" />
   <script src="/config.js"></script>
   <script src="/vendor/peerjs.min.js" defer></script>
+  <script src="/vendor/qrcode.js"></script>
   <script type="module" src="/js/app.js"></script>
 </head>
 <body>
@@ -27,6 +28,7 @@
       <img class="app-icon" src="/icons/icon-192.png" alt="" />
       <h1>Felt</h1>
       <p class="subtitle">No-Limit Texas Hold'em</p>
+      <div id="lan-badge" class="lan-badge" hidden><svg viewBox="0 0 24 24"><path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/></svg>Wi-Fi mode · works offline</div>
 
       <div class="group">
         <label class="row">
@@ -155,7 +157,23 @@
     </div>
     <div class="sheet-body">
       <input id="join-code" class="code-input" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+      <div id="lan-rooms" hidden>
+        <h3 class="group-title">Tables on this Wi-Fi</h3>
+        <div class="group" id="lan-rooms-list"></div>
+      </div>
       <p class="footnote center">Ask the host for the 5-character table code, or open their invite link.</p>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet-invite" role="dialog" aria-modal="true">
+    <div class="grabber"></div>
+    <div class="nav"><span></span><h2>Invite Friends</h2><button class="nav-btn strong" data-close>Done</button></div>
+    <div class="sheet-body center">
+      <div id="inv-qr" class="inv-qr"></div>
+      <div class="inv-code" id="inv-code"></div>
+      <div class="inv-url" id="inv-url"></div>
+      <button class="btn btn-tinted" id="inv-copy">Copy Link</button>
+      <p class="footnote center" id="inv-note"></p>
     </div>
   </div>
 
