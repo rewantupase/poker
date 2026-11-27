@@ -64,3 +64,11 @@ input.code { font-size: 28px; letter-spacing: .35em; padding-left: .35em; font-w
 @media (max-height: 460px) { .pad { width: 70px; height: 70px; } .pad.fire { width: 84px; height: 84px; } .weapon { bottom: calc(env(safe-area-inset-bottom) + 94px); } }
 #toast { position: fixed; left: 50%; bottom: 120px; transform: translateX(-50%); background: rgba(0,0,0,.75); padding: 8px 16px; border-radius: 99px; font-size: 14px; opacity: 0; transition: opacity .25s; pointer-events: none; z-index: 9; }
 #toast.show { opacity: 1; }
+
+#hud::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at center, transparent 55%, rgba(255,40,30,.55)); opacity: var(--flash, 0); transition: opacity .25s; }
+.weapon { font-size: 15px; background: linear-gradient(180deg, rgba(40,40,60,.8), rgba(0,0,0,.7)); box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+.weapon.on { animation: pop .25s ease-out; }
+@keyframes pop { 0% { transform: translateX(-50%) scale(.6); } 70% { transform: translateX(-50%) scale(1.12); } 100% { transform: translateX(-50%) scale(1); } }
+.pad { box-shadow: 0 6px 18px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.3); }
+.hp { box-shadow: 0 3px 10px rgba(0,0,0,.35); }
+.feed div { backdrop-filter: blur(6px); }
