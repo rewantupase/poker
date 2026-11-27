@@ -307,7 +307,7 @@ async function pollRooms() {
   const box = $('#lan-rooms');
   if (!S.lan || !$('#sheet-join').classList.contains('show')) return;
   try {
-    const rooms = await (await fetch('/api/rooms', { cache: 'no-store' })).json();
+    const rooms = (await (await fetch('/api/rooms', { cache: 'no-store' })).json()).filter((r) => r.game !== 'kart');
     box.hidden = false;
     $('#lan-rooms-list').innerHTML = rooms.length ? rooms.map((r) => `<button class="row btn-row" data-room="${esc(r.code)}"><span class="row-label">${esc(r.title || 'Table')}<small>${esc(r.code)} · ${r.seated}/${r.max} seated${r.bots ? ` · ${r.bots} bots` : ''} · ${esc(r.blinds || '')}</small></span><span class="row-chev">Join</span></button>`).join('') : '<div class="row"><span class="row-label muted">No tables yet — ask a friend to host</span></div>';
   } catch {}

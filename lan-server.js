@@ -26,7 +26,7 @@ const MIME = {
   '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.ico': 'image/x-icon',
 };
 // only the game's own files are ever served
-const ALLOW = ['index.html', 'config.js', 'manifest.webmanifest', 'sw.js', 'css/', 'js/', 'vendor/', 'fonts/', 'icons/'];
+const ALLOW = ['index.html', 'kart.html', 'config.js', 'manifest.webmanifest', 'sw.js', 'css/', 'js/', 'vendor/', 'fonts/', 'icons/'];
 
 let PORT = WANT_PORT;
 
@@ -166,12 +166,12 @@ function onJoin(ws, m) {
 function cleanMeta(x) {
   const s = (v, n) => String(v ?? '').slice(0, n);
   const n = (v) => Math.max(0, Math.min(99, Number(v) | 0));
-  return { title: s(x && x.title, 40), seated: n(x && x.seated), max: n(x && x.max), bots: n(x && x.bots), blinds: s(x && x.blinds, 14), running: !!(x && x.running) };
+  return { game: s(x && x.game, 8), title: s(x && x.title, 40), seated: n(x && x.seated), max: n(x && x.max), bots: n(x && x.bots), blinds: s(x && x.blinds, 14), running: !!(x && x.running) };
 }
 
 function handle(ws) {
   ws.onmessage = (txt) => {
-    if (++ws.rate > 300) return ws.close(1008); // flood guard
+    if (++ws.rate > 900) return ws.close(1008); // flood guard
     let m;
     try { m = JSON.parse(txt); } catch { return; }
     if (!m || typeof m !== 'object') return;

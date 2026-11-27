@@ -81,3 +81,10 @@ The app detects the server automatically and shows a green "Wi-Fi mode" badge. N
 - Allow Node through the firewall when prompted (private networks only).
 - Hostel/public Wi-Fi often blocks device-to-device traffic ("client isolation"). Use a hotspot instead — it works without mobile data.
 - Over plain `http` there is no install prompt, wake-lock or clipboard on some phones; the game itself is unaffected.
+
+## Kart Battle 🏎️
+
+A 3D kart arena (original game, inspired by the genre) at `/kart.html`, linked from the home screen. Karts auto-drive: steer with the ◀ ▶ pads (or ←/→, A/D) and tap FIRE (Space). Drive through the yellow boxes for rockets, mines, a machine gun, shield or boost. First to 10 kills wins (or most kills when the 3 minutes end), then a new round starts automatically.
+
+- **Play vs Bots**: solo, instant.
+- **Host a Game**: pick bots and kills target, share the QR/code. Works on the Vercel site (internet) or in Wi-Fi mode (offline, see above), up to 12 karts.
