@@ -72,3 +72,10 @@ input.code { font-size: 28px; letter-spacing: .35em; padding-left: .35em; font-w
 .pad { box-shadow: 0 6px 18px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.3); }
 .hp { box-shadow: 0 3px 10px rgba(0,0,0,.35); }
 .feed div { backdrop-filter: blur(6px); }
+
+#popup { position: absolute; left: 50%; top: 24%; transform: translate(-50%, -50%) scale(0); font-size: 38px; font-weight: 900; letter-spacing: .02em; white-space: nowrap; color: #ffe14d; text-shadow: 0 3px 0 #c2410c, 0 0 18px rgba(255,150,0,.8), 0 6px 20px rgba(0,0,0,.4); font-style: italic; }
+#popup.go { animation: popkill 1.4s ease-out forwards; }
+@keyframes popkill { 0% { transform: translate(-50%,-50%) scale(.2) rotate(-6deg); opacity: 0; } 12% { transform: translate(-50%,-50%) scale(1.25) rotate(2deg); opacity: 1; } 22% { transform: translate(-50%,-50%) scale(1) rotate(0); } 80% { opacity: 1; } 100% { transform: translate(-50%,-62%) scale(1); opacity: 0; } }
+.hp::before { content: '❤'; position: absolute; left: 7px; top: 0; bottom: 0; display: flex; align-items: center; z-index: 2; font-size: 13px; color: #fff; text-shadow: 0 1px 2px #000; }
+.hp { height: 24px; border-radius: 12px; border: 2px solid rgba(255,255,255,.55); }
+#hp-fill { background: linear-gradient(180deg, #ff7aa2, #ff3d71); }

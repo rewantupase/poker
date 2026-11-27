@@ -88,3 +88,5 @@ A 3D kart arena (original game, inspired by the genre) at `/kart.html`, linked f
 
 - **Play vs Bots**: solo, instant.
 - **Host a Game**: pick bots and kills target, share the QR/code. Works on the Vercel site (internet) or in Wi-Fi mode (offline, see above), up to 12 karts.
+
+**Kart Battle extras:** cute animal drivers, lava pit in the middle (avoid it!), ⚡ speed pads, homing missiles and triple rockets, a 👑 on the leader, and kill-streak popups.

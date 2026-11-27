@@ -3,7 +3,6 @@
 export const HALF = 44; // arena half-size
 export const MAX_KARTS = 12;
 export const OBST = [ // axis-aligned blocks: center x,z and half sizes
-  { x: 0, z: 0, w: 5, d: 5 },
   { x: -22, z: 14, w: 3, d: 8 }, { x: 22, z: -14, w: 3, d: 8 },
   { x: 20, z: 20, w: 7, d: 2 }, { x: -20, z: -20, w: 7, d: 2 },
   { x: -10, z: -30, w: 2, d: 2 }, { x: 10, z: 30, w: 2, d: 2 },
@@ -12,7 +11,9 @@ export const OBST = [ // axis-aligned blocks: center x,z and half sizes
 ];
 export const SPAWNS = [[-36, -36], [36, 36], [-36, 36], [36, -36], [0, -38], [0, 38], [-38, 0], [38, 0], [-14, 12], [14, -12], [-26, 28], [26, -28]];
 export const ITEMS = [[-14, -14], [14, 14], [-14, 14], [14, -14], [0, 12], [0, -12], [-30, 0], [30, 0], [-36, 22], [36, -22]];
-export const WEAPONS = ['', 'rocket', 'mine', 'mg', 'shield', 'boost'];
+export const WEAPONS = ['', 'rocket', 'mine', 'mg', 'shield', 'boost', 'homing', 'triple'];
+export const LAVA = { x: 0, z: 0, r: 6.5 }; // hazard pit in the middle
+export const PADS = [[-27, 0], [27, 0], [0, -30], [0, 30]]; // speed strips
 export const NAMES = ['Zoom', 'Blaze', 'Nitro', 'Turbo', 'Drift', 'Rex', 'Pixel', 'Bolt', 'Dash', 'Comet', 'Vortex', 'Spike'];
 export const COLORS = [0xff453a, 0x0a84ff, 0x30d158, 0xffd60a, 0xbf5af2, 0xff9f0a, 0x64d2ff, 0xff375f, 0xac8e68, 0x5e5ce6, 0x32d74b, 0xe5e5ea];
 
@@ -77,6 +78,14 @@ export class Sim {
     const fx = Math.sin(k.h), fz = Math.cos(k.h);
     switch (k.weapon) {
       case 'rocket': this.proj.push({ id: this.nid++, type: 'r', x: k.x + fx * 2, z: k.z + fz * 2, h: k.h, sp: 42, life: 2.2, o: k.id }); k.weapon = ''; break;
+      case 'homing': {
+        let tg = null, bd = 1e9;
+        for (const o of this.karts.values()) if (o !== k && !o.dead) { const d = Math.hypot(o.x - k.x, o.z - k.z), a = Math.abs(wrap(Math.atan2(o.x - k.x, o.z - k.z) - k.h)); if (a < 1.2 && d < bd) { bd = d; tg = o.id; } }
+        this.proj.push({ id: this.nid++, type: 'h', x: k.x + fx * 2, z: k.z + fz * 2, h: k.h, sp: 30, life: 3.2, o: k.id, tg }); k.weapon = ''; break;
+      }
+      case 'triple':
+        for (const a of [-0.2, 0, 0.2]) this.proj.push({ id: this.nid++, type: 'r', x: k.x + fx * 2, z: k.z + fz * 2, h: k.h + a, sp: 42, life: 2.2, o: k.id });
+        k.weapon = ''; break;
       case 'mine': this.mines.push({ id: this.nid++, x: k.x - fx * 2.2, z: k.z - fz * 2.2, arm: 0.8, life: 45, o: k.id }); k.weapon = ''; break;
       case 'mg':
         if (k.cd <= 0) {
@@ -104,13 +113,14 @@ export class Sim {
     // avoid walls/blocks: probe ahead
     for (const [dist, side] of [[5, 0], [4, 0.6], [4, -0.6]]) {
       const px = k.x + Math.sin(k.h + side) * dist, pz = k.z + Math.cos(k.h + side) * dist;
-      if (Math.abs(px) > HALF - 1 || Math.abs(pz) > HALF - 1 || OBST.some((o) => Math.abs(px - o.x) < o.w + 0.8 && Math.abs(pz - o.z) < o.d + 0.8)) { want = side >= 0 ? -1.2 : 1.2; if (side === 0) want = k.aiJit > 3 ? 1.4 : -1.4; break; }
+      if (Math.abs(px) > HALF - 1 || Math.abs(pz) > HALF - 1 || Math.hypot(px - LAVA.x, pz - LAVA.z) < LAVA.r + 2 || OBST.some((o) => Math.abs(px - o.x) < o.w + 0.8 && Math.abs(pz - o.z) < o.d + 0.8)) { want = side >= 0 ? -1.2 : 1.2; if (side === 0) want = k.aiJit > 3 ? 1.4 : -1.4; break; }
     }
     k.s = clamp(want * 1.6, -1, 1);
     k.f = false;
     if (k.weapon) {
       const ang = tgt ? Math.abs(wrap(Math.atan2(tgt.x - k.x, tgt.z - k.z) - k.h)) : 9;
-      if (k.weapon === 'rocket' && tgt && ang < 0.14 && td < 36) k.f = true;
+      if ((k.weapon === 'rocket' || k.weapon === 'triple') && tgt && ang < 0.2 && td < 36) k.f = true;
+      else if (k.weapon === 'homing' && tgt && ang < 0.5 && td < 40) k.f = true;
       else if (k.weapon === 'mg' && tgt && ang < 0.2 && td < 30) k.f = true;
       else if (k.weapon === 'mine' && (Math.random() < dt * 0.6)) k.f = true;
       else if ((k.weapon === 'shield' || k.weapon === 'boost') && Math.random() < dt * 1.5) k.f = true;
@@ -161,11 +171,14 @@ export class Sim {
         if (this.itemT[i] <= 0 && Math.hypot(p[0] - k.x, p[1] - k.z) < 2.4) {
           this.itemT[i] = 6;
           const r = Math.random();
-          k.weapon = r < 0.3 ? 'rocket' : r < 0.5 ? 'mine' : r < 0.75 ? 'mg' : r < 0.88 ? 'shield' : 'boost';
+          k.weapon = r < 0.2 ? 'rocket' : r < 0.32 ? 'mine' : r < 0.5 ? 'mg' : r < 0.6 ? 'shield' : r < 0.68 ? 'boost' : r < 0.84 ? 'homing' : 'triple';
           k.ammo = k.weapon === 'mg' ? 22 : 1;
           this.ev.push(['pick', k.id]);
         }
       });
+      // lava pit + speed pads
+      if (Math.hypot(k.x - LAVA.x, k.z - LAVA.z) < LAVA.r) { k.lava = (k.lava || 0) + dt; if (k.lava >= 0.2) { k.lava = 0; this.damage(k, 9, k.lastHit || ''); } k.v *= 1 - 0.8 * dt; }
+      for (const pd of PADS) if (Math.hypot(k.x - pd[0], k.z - pd[1]) < 3.2) k.boost = Math.max(k.boost, 1.2);
       // fire
       if (k.weapon && this.state === 'play') {
         if (k.weapon === 'mg' ? k.f : (k.f && (k.isBot || !k.fprev))) this.fire(k);
@@ -182,6 +195,10 @@ export class Sim {
     for (let i = this.proj.length - 1; i >= 0; i--) {
       const p = this.proj[i];
       const ox = p.x, oz = p.z;
+      if (p.type === 'h') {
+        const t = p.tg && this.karts.get(p.tg);
+        if (t && !t.dead) { const da = wrap(Math.atan2(t.x - p.x, t.z - p.z) - p.h); p.h += clamp(da, -2.6 * dt, 2.6 * dt); }
+      }
       p.x += Math.sin(p.h) * p.sp * dt; p.z += Math.cos(p.h) * p.sp * dt; p.life -= dt;
       let hit = p.life <= 0 || Math.abs(p.x) > HALF || Math.abs(p.z) > HALF || OBST.some((o) => Math.abs(p.x - o.x) < o.w && Math.abs(p.z - o.z) < o.d);
       let victim = null;
@@ -193,7 +210,7 @@ export class Sim {
       }
       if (!hit) continue;
       this.proj.splice(i, 1);
-      if (p.type === 'r') this.explode(p.x, p.z, 5.5, 48, p.o);
+      if (p.type === 'r' || p.type === 'h') this.explode(p.x, p.z, 5.5, p.type === 'h' ? 40 : 48, p.o);
       else if (victim) this.damage(victim, 8, p.o);
     }
     // mines
